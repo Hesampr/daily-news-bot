@@ -17,10 +17,10 @@ def _detect_category(title: str, description: str) -> str:
 
 def _call_gemini(prompt: str) -> str:
     response = _client.models.generate_content(
-        model="gemini-2.0-flash",
+        model="gemini-2.5-flash",
         contents=prompt,
     )
-    time.sleep(4)
+    time.sleep(7)
     text = response.text.strip()
     print(f"Gemini raw response: {text}", flush=True)
     return text
