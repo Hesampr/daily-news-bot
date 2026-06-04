@@ -21,7 +21,9 @@ def _call_gemini(prompt: str) -> str:
         contents=prompt,
     )
     time.sleep(4)
-    return response.text.strip()
+    text = response.text.strip()
+    print(f"Gemini raw response: {text}")
+    return text
 
 
 def summarize(article: dict) -> tuple:
