@@ -22,7 +22,7 @@ def _call_gemini(prompt: str) -> str:
     )
     time.sleep(4)
     text = response.text.strip()
-    print(f"Gemini raw response: {text}")
+    print(f"Gemini raw response: {text}", flush= True)
     return text
 
 
