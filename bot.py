@@ -102,7 +102,7 @@ def main():
     # --- Deduplicate & Merge ---
     merged, dedup_errors = deduplicate_and_merge(filtered)
     all_errors.extend(dedup_errors)
-    merged = merged[:MAX_ARTICLES_PER_RUN]
+    merged = merged[:1]
 
     # --- Summarize & Send ---
     no_summary = 0
