@@ -22,7 +22,7 @@ def _call_gemini(prompt: str) -> str:
     )
     time.sleep(4)
     text = response.text.strip()
-    print(f"Gemini raw response: {text}", flush= True)
+    print(f"Gemini raw response: {text}", flush=True)
     return text
 
 
@@ -46,11 +46,13 @@ def summarize(article: dict) -> tuple:
         text = _call_gemini(prompt)
         summary, tags = _parse_response(text)
     except Exception as e1:
+        print(f"Gemini error (attempt 1): {str(e1)}", flush=True)
         try:
             time.sleep(20)
             text = _call_gemini(prompt)
             summary, tags = _parse_response(text)
         except Exception as e2:
+            print(f"Gemini error (attempt 2): {str(e2)}", flush=True)
             errors.append(f"Summarization failed for '{title}': {str(e2)}")
 
     article["summary"] = summary
