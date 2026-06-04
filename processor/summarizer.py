@@ -46,7 +46,7 @@ def summarize(article: dict) -> tuple:
             text = _call_gemini(prompt)
             summary, tags = _parse_response(text)
         except Exception as e2:
-            errors.append(f"Summarization failed for '{title}': {str(e2)}")
+            errors.append(f"Summarization failed for '{title}': {str(e1)} | Retry: {str(e2)}")
 
     article["summary"] = summary
     article["tags"] = tags
