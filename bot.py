@@ -89,7 +89,7 @@ def main():
     # --- Deduplicate & Merge ---
     merged, dedup_errors = deduplicate_and_merge(filtered)
     all_errors.extend(dedup_errors)
-    merged = merged[:1]
+    merged = merged[:MAX_ARTICLES_PER_RUN]
 
     # --- Summarize & Send ---
     no_summary = 0
@@ -123,7 +123,7 @@ def main():
         "no_summary": no_summary,
         "articles_sent": articles_sent,
     }
-    send_error_report(report)
+    # send_error_report(report)
 
 
 if __name__ == "__main__":
