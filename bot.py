@@ -1,6 +1,6 @@
 import os
 
-from fetchers import hackernews, rss_feeds, reddit
+from fetchers import hackernews, rss_feeds
 from processor.deduplicator import deduplicate_and_merge
 from processor.summarizer import summarize
 from bot.telegram_sender import send_message, format_article, send_error_report
@@ -9,7 +9,6 @@ from config import (
     BLACKLIST_KEYWORDS,
     HN_KEYWORDS,
     RSS_SOURCES,
-    REDDIT_SUBREDDITS,
     MAX_ARTICLES_PER_RUN,
 )
 
@@ -70,18 +69,6 @@ def main():
     succeeded_sources.extend(list(rss_succeeded_names))
     all_errors.extend(rss_errors)
     all_articles.extend(rss_articles)
-
-    # --- Reddit ---
-    reddit_articles, reddit_errors = reddit.fetch()
-    if reddit_errors:
-        reddit_failed = {e.split(":")[0].strip() for e in reddit_errors}
-        failed_sources.extend(list(reddit_failed))
-        all_errors.extend(reddit_errors)
-        reddit_succeeded = set(f"Reddit r/{s}" for s in REDDIT_SUBREDDITS) - reddit_failed
-        succeeded_sources.extend(list(reddit_succeeded))
-    else:
-        succeeded_sources.extend([f"Reddit r/{s}" for s in REDDIT_SUBREDDITS])
-    all_articles.extend(reddit_articles)
 
     total_sources = len(succeeded_sources) + len(failed_sources)
 

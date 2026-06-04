@@ -50,7 +50,6 @@ RSS_SOURCES = {
     "Product Hunt": "https://www.producthunt.com/feed",
 }
 
-REDDIT_SUBREDDITS = ["startups", "technology"]
 
 HN_KEYWORDS = ["startup", "AI", "innovation", "technology"]
 
