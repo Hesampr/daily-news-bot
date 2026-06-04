@@ -15,6 +15,7 @@ def fetch() -> tuple:
         try:
             url = f"https://www.reddit.com/r/{subreddit}/new.json?limit=25"
             response = requests.get(url, headers=HEADERS, timeout=10)
+            print(f"Reddit r/{subreddit} status: {response.status_code}", flush=True)
             response.raise_for_status()
             data = response.json()
 
@@ -47,6 +48,7 @@ def fetch() -> tuple:
                 })
 
         except Exception as e:
+            print(f"Reddit r/{subreddit} error: {str(e)}", flush=True)
             errors.append(f"Reddit r/{subreddit}: {str(e)}")
 
     return articles, errors
