@@ -1,10 +1,9 @@
 import os
-import google.generativeai as genai
+from google import genai
 
 from config import CATEGORIES
 
-genai.configure(api_key=os.environ.get("GEMINI_API_KEY", ""))
-_model = genai.GenerativeModel("gemini-1.5-flash")
+_client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY", ""))
 
 
 def _detect_category(title: str, description: str) -> str:
@@ -16,7 +15,10 @@ def _detect_category(title: str, description: str) -> str:
 
 
 def _call_gemini(prompt: str) -> str:
-    response = _model.generate_content(prompt)
+    response = _client.models.generate_content(
+        model="gemini-2.0-flash",
+        contents=prompt,
+    )
     return response.text.strip()
 
 
