@@ -42,13 +42,11 @@ def is_relevant(article: dict) -> bool:
     # 2. 관심 키워드 검사 (영문은 \b 정규식, 한글은 일반 포함 검사)
     for kw in INTEREST_KEYWORDS:
         kw_lower = kw.lower()
-        # 영문/숫자로만 이루어진 단어(ai, llm 등)는 독립 단어일 때만 통과
         if re.match(r'^[a-z0-9\s-]+$', kw_lower):
             pattern = r'\b' + re.escape(kw_lower) + r'\b'
             if re.search(pattern, text):
                 return True
         else:
-            # 한국어(인공지능, 금리 등)는 조사(이/을/의)가 붙어있어도 통과하도록 in 검사
             if kw_lower in text:
                 return True
                 
@@ -61,7 +59,7 @@ def get_primary_link(article: dict) -> str:
     return link
 
 def send_aggregated_slack_news(articles) -> bool:
-    """수집·분류된 기사를 4대 분야별 최대 5개씩 골라 1개의 슬랙 메시지로 전송합니다."""
+    """수집·분류된 기사를 4대 분야별 최대 5개씩 골라(도배 방지 적용) 슬랙으로 전송합니다."""
     slack_webhook_url = os.environ.get("SLACK_WEBHOOK_URL")
     if not slack_webhook_url:
         print("SLACK_WEBHOOK_URL 이 설정되지 않았습니다.")
@@ -80,28 +78,38 @@ def send_aggregated_slack_news(articles) -> bool:
         formatted_item = f"• <{url}|{title} ({date})>"
 
         for cat_name in CATEGORY_ORDER:
-            # 카테고리 이름이 부분 일치하면 해당 묶음에 추가
             if cat_name in category or category in cat_name:
-                categorized_news[cat_name].append(formatted_item)
+                categorized_news[cat_name].append((title.lower(), formatted_item))
                 break
 
     message_text = "🗞️ *오늘의 주요 뉴스 브리핑*\n\n"
     has_news = False
 
-    # 2. 카테고리당 최소 3개 검증 및 최대 5개 선별 출력
+    # 2. 특정 주제(엔비디아 등) 도배 방지 및 3~5개 선별
     for cat_name in CATEGORY_ORDER:
         items = categorized_news[cat_name]
         
-        if len(items) < 3 and len(items) > 0:
-            print(f"⚠️ [경고] '{cat_name}' 분야 기사가 {len(items)}개로 최소 기준(3개)보다 부족합니다.")
-            
-        # 최대 5개까지만 슬랙 메시지에 포함
-        sliced_items = items[:5]
+        selected_items = []
+        nvidia_count = 0  # 엔비디아 기사 카운터
         
-        if sliced_items:
+        for title_lower, formatted_item in items:
+            # 엔비디아 관련 기사는 카테고리당 최대 2개까지만 허용
+            if "nvidia" in title_lower or "엔비디아" in title_lower:
+                if nvidia_count >= 2:
+                    continue
+                nvidia_count += 1
+                
+            selected_items.append(formatted_item)
+            if len(selected_items) == 5:  # 최대 5개까지만 선별
+                break
+        
+        if len(selected_items) < 3 and len(selected_items) > 0:
+            print(f"⚠️ [경고] '{cat_name}' 분야 기사가 {len(selected_items)}개로 최소 기준(3개)보다 부족합니다.")
+            
+        if selected_items:
             has_news = True
             message_text += f"*{cat_name}*\n"
-            message_text += "\n".join(sliced_items) + "\n\n"
+            message_text += "\n".join(selected_items) + "\n\n"
 
     if not has_news:
         message_text += "오늘 조건에 맞는 새로운 뉴스가 없습니다."
@@ -147,10 +155,10 @@ def main():
     merged, dedup_errors = deduplicate_and_merge(filtered)
     all_errors.extend(dedup_errors)
     
-    # 4대 분야별 3~5개씩 넉넉히 선별하기 위해 최대 35개까지 AI 분류로 보냄
-    merged = merged[:35]
+    # [핵심 수정] 국내 VC/스타트업 RSS 기사들이 잘려나가지 않도록 수집 풀을 60개로 확대!
+    merged = merged[:60]
 
-    # --- AI 카테고리 분류 ---
+    # --- 카테고리 분류 ---
     classified_articles = []
     for article in merged:
         article, sum_errors = summarize(article)
