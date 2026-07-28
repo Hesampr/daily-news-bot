@@ -1,45 +1,50 @@
 import re
-from config import CATEGORIES
+from config import CATEGORIES, SOFT_PENALTY_KEYWORDS, WATCHLIST_WEIGHT
+
+try:
+    from config import ALL_WATCHLISTS
+except ImportError:
+    ALL_WATCHLISTS = []
+
+# 기본(미분류) 카테고리 = 거시 계열(이름이 바뀌어도 안전하게 탐색)
+DEFAULT_CATEGORY = next((c for c in CATEGORIES if "거시" in c), list(CATEGORIES.keys())[-1])
+
+_ASCII_KW = re.compile(r"[a-z0-9&\s\-\.]+")
+
+
+def keyword_hit(kw: str, text_lower: str) -> bool:
+    """영문·숫자 토큰은 경계 매칭(부분단어 오탐 방지), 한글 등은 부분문자열 매칭.
+    - 'ai'가 'again'에 걸리지 않도록 앞뒤 영숫자 경계 확인.
+    - '금리'가 '기준금리'에서 잡히도록 한글은 부분문자열(한글에 \b는 복합어 누락)."""
+    kw = (kw or "").lower().strip()
+    if not kw:
+        return False
+    if _ASCII_KW.fullmatch(kw):
+        return re.search(r"(?<![a-z0-9])" + re.escape(kw) + r"(?![a-z0-9])", text_lower) is not None
+    return kw in text_lower
+
 
 def summarize(article: dict) -> tuple:
-    """
-    Gemini AI 대신 config.py의 CATEGORIES 키워드 매칭(점수제)으로 
-    기사를 4대 카테고리로 자동 분류합니다.
-    """
+    """CATEGORIES 점수제로 분류하고, 워치리스트 가점 − 소프트감점을 relevance로 부여."""
     errors = []
     title = article.get("title", "")
     description = article.get("description") or article.get("content") or ""
     text = (title + " " + description).lower()
 
-    # 카테고리별 키워드 일치 개수 계산
-    category_scores = {
-        "🌱 임팩트": 0,
-        "🤖 AI": 0,
-        "💼 대체투자": 0,
-        "🌐 거시경제": 0
-    }
-
-    for cat_name, keywords in CATEGORIES.items():
-        if not cat_name or cat_name not in category_scores:
-            continue
-            
+    scores = {cat: 0 for cat in CATEGORIES}
+    for cat, keywords in CATEGORIES.items():
         for kw in keywords:
-            if not kw:
-                continue
-            # 단어 경계(\b)를 사용해 정확히 일치하는 키워드 개수 카운트
-            pattern = r'\b' + re.escape(kw.lower()) + r'\b'
-            if re.search(pattern, text):
-                category_scores[cat_name] += 1
+            if keyword_hit(kw, text):
+                scores[cat] += 1
 
-    # 가장 매칭 점수가 높은 카테고리 선정
-    best_category = max(category_scores, key=category_scores.get)
-    
-    # 일치하는 키워드가 단 하나도 없는 경우 기본값으로 '🌐 거시경제' 지정
-    if category_scores[best_category] == 0:
-        assigned_category = "🌐 거시경제"
-    else:
-        assigned_category = best_category
+    best = max(scores, key=scores.get)
+    assigned = best if scores[best] > 0 else DEFAULT_CATEGORY
 
-    # 결과 저장
-    article["category"] = assigned_category
+    wl_hits = sum(1 for kw in ALL_WATCHLISTS if keyword_hit(kw, text))
+    sp_hits = sum(1 for kw in SOFT_PENALTY_KEYWORDS if keyword_hit(kw, text))
+    relevance = scores[best] + wl_hits * WATCHLIST_WEIGHT - sp_hits
+
+    article["category"] = assigned
+    article["category_scores"] = scores
+    article["relevance"] = max(float(relevance), 0.0)
     return article, errors
