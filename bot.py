@@ -10,7 +10,7 @@ try:
 except ImportError:
     HAS_NEWSLETTERS = False
     print("ℹ️ 뉴스레터 모듈을 찾을 수 없어 수집 단계에서 제외합니다.")
-from processor.deduplicator import deduplicate_and_merge, is_same_news_issue
+from processor.deduplicator import deduplicate_and_merge
 from processor.summarizer import summarize, keyword_hit
 from processor.reranker import rerank_by_category, is_enabled as llm_enabled
 from config import (
