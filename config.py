@@ -118,12 +118,12 @@ RSS_FEEDS = ALL_FEEDS
 RSS_SOURCES = ALL_FEEDS
 
 # ---------------------------------------------------------------------------
-# 5. 구글 뉴스 (🚀 5개 전 분야 기사 공급선 완벽 복구!)
+# 5. 구글 뉴스 (🚀 주말에도 기사가 넘치도록 when:3d 로 확대 및 키워드 대폭 추가!)
 # ---------------------------------------------------------------------------
 GOOGLE_NEWS_FEEDS = {
-    "국내 VC/스타트업 투자": "https://news.google.com/rss/search?q=(%ED%88%AC%EC%9E%90%EC%9C%A0%EC%B9%98+OR+%ED%8E%80%EB%94%A9+OR+M%26A+OR+%EC%8B%9C%EB%A6%AC%EC%A6%88A+OR+%EC%8B%9C%EB%A6%AC%EC%A6%88B)+when:1d&hl=ko&gl=KR&ceid=KR:ko",
-    "글로벌 VC/PE 펀딩": "https://news.google.com/rss/search?q=(venture+capital+OR+private+equity+OR+funding+round+OR+dry+powder)+when:1d&hl=en-US&gl=US&ceid=US:en",
-    "미국 통화정책/금리": "https://news.google.com/rss/search?q=(FOMC+OR+%EC%97%B0%EC%A4%80+OR+%EA%B8%B0%EC%A4%80%EA%B8%88%EB%A6%AC+OR+inflation)+when:1d&hl=ko&gl=KR&ceid=KR:ko",
-    "글로벌 거시/지정학": "https://news.google.com/rss/search?q=(interest+rate+OR+recession+OR+tariff+OR+geopolitics)+when:1d&hl=en-US&gl=US&ceid=US:en",
-    "MBB/Big4 인사이트": "https://news.google.com/rss/search?q=(McKinsey+OR+BCG+OR+Bain+OR+Deloitte+OR+PwC)+report&hl=en-US&gl=US&ceid=US:en"
+    "국내 VC/스타트업 투자": "https://news.google.com/rss/search?q=(%ED%88%AC%EC%9E%90%EC%9C%A0%EC%B9%98+OR+%ED%8E%80%EB%94%A9+OR+M%26A+OR+%EC%8B%9C%EB%A6%AC%EC%A6%88A+OR+%EC%8B%9C%EB%A6%AC%EC%A6%88B+OR+%EB%B2%A4%EC%B2%98%ED%8E%80%EB%93%9C)+when:3d&hl=ko&gl=KR&ceid=KR:ko",
+    "글로벌 VC/PE 펀딩": "https://news.google.com/rss/search?q=(venture+capital+OR+private+equity+OR+funding+round+OR+dry+powder+OR+startup+raising)+when:3d&hl=en-US&gl=US&ceid=US:en",
+    "미국 통화정책/금리": "https://news.google.com/rss/search?q=(FOMC+OR+%EC%97%B0%EC%A4%80+OR+%EA%B8%B0%EC%A4%80%EA%B8%88%EB%A6%AC+OR+%ED%8C%8C%EC%9B%94+OR+inflation+OR+cpi)+when:3d&hl=ko&gl=KR&ceid=KR:ko",
+    "글로벌 거시/지정학": "https://news.google.com/rss/search?q=(interest+rate+OR+recession+OR+tariff+OR+geopolitics+OR+federal+reserve)+when:3d&hl=en-US&gl=US&ceid=US:en",
+    "MBB/Big4 인사이트": "https://news.google.com/rss/search?q=(McKinsey+OR+BCG+OR+Bain+OR+Deloitte+OR+PwC+OR+KPMG)+(report+OR+survey+OR+outlook+OR+megatrend)&hl=en-US&gl=US&ceid=US:en"
 }
