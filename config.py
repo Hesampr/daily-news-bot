@@ -339,3 +339,28 @@ ALL_WATCHLISTS = WATCHLIST_MACRO + WATCHLIST_VC_PE + WATCHLIST_AI
 ACRONYM_KEYWORDS = ["AI", "M&A", "IPO", "CPI", "PCE", "PPI", "HBM", "GPU", "TPU",
                     "NPU", "RAG", "LBO", "IRR", "MOIC", "DPI", "TVPI", "DXY",
                     "IRA", "GDP", "FOMC", "ESS", "ECB", "WTO", "RCPS", "SBVA"]
+
+# ---------------------------------------------------------------------------
+# 🚀 [추가] 인텔리전스 랭킹 엔진 및 재탕 방지 설정
+# ---------------------------------------------------------------------------
+# 최근 발송된 이슈 제목 저장용 파일
+RECENT_TITLES_FILE = "recent_briefing_titles.txt"
+
+# 팩트 / 액션 동사 가점 (+3점 ~ +4점)
+ISSUE_HIGH_VALUE_SIGNALS = [
+    "인수", "투자", "발표", "상장", "IPO", "M&A", "실적", "최대", "최초",
+    "유치", "조원", "억원", "시리즈", "수출", "통과", "승인", "체결",
+    "acquires", "invests", "launches", "raises", "funding", "revenue"
+]
+
+# 저가치 노이즈 키워드 폭탄 감점 (-14점) -> 기존 SOFT_PENALTY보다 강력한 억제력
+ISSUE_LOW_VALUE_SIGNALS = [
+    "전망", "수혜주", "칼럼", "인터뷰", "오피니언", "주가", "특징주", "추천",
+    "분석해보니", "사설", "기론", "시론", "개미", "목표가", "종목", "투자의견",
+    "상한가", "하한가", "증시", "테마주"
+]
+
+# 과거 기사 재탕 판정 기준 및 패널티 (65% 이상 유사하면 -18점 감점)
+PAST_ISSUE_THRESHOLD = 0.65
+RECENT_ISSUE_PENALTY = -18.0
+
