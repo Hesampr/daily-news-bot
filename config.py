@@ -118,9 +118,17 @@ MACRO_KW = [
     "geopolitical", "geopolitical risk", "gdp", "inflation", "interest rate",
     "krw", "liquidity", "macroeconomy", "monetary policy", "mortgage rate",
     "oil price", "ppi", "protectionism", "recession", "retail sales",
-    "tariff", "trade war", "unemployment", "usd", "wti",
+    "tariff", "trade war", "unemployment", "usd", "wti"
 ]
-
+# ---------------------------------------------------------------------------
+# 👔 MBB·Big4 인사이트
+# ---------------------------------------------------------------------------
+INSIGHTS_KW = [
+    "mckinsey", "맥킨지", "bcg", "bain", "베인", "deloitte", "딜로이트",
+    "pwc", "ey", "kpmg", "sloan", "harvard business", "hbr", "insights",
+    "strategy+business", "executive", "ceo survey", "megatrend", "메가트렌드",
+    "백서", "whitepaper", "outlook", "survey", "report"
+]
 # ---------------------------------------------------------------------------
 # 카테고리(분류) = 위 리스트 그대로. 수집필터는 자동 생성 → 어긋남 없음.
 # ---------------------------------------------------------------------------
@@ -139,8 +147,13 @@ CATEGORIES = {
     "🤖 AI": AI_KW,
     "💼 대체투자": ALT_KW,
     "🌐 거시·정책·지정학": MACRO_KW,
-    "👔 인사이트": INSIGHT_KW,
+    "👔 MBB·Big4 인사이트": INSIGHT_KW,
 }
+
+# 해외 도메인 가점에도 추가 (영어 보고서 가점을 위해)
+OVERSEAS_PREFERRED_DOMAINS = ["🌱 임팩트", "🤖 AI", "💼 대체투자", "👔 MBB·Big4 인사이트"]
+
+
 INTEREST_KEYWORDS = sorted(set(k for kws in CATEGORIES.values() for k in kws))
 
 # 인사이트로 '출처 기반' 강제 배정할 소스/센더 (키워드 무관)
