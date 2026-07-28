@@ -12,7 +12,7 @@ INTEREST_KEYWORDS = [
     # 🤖 AI (생성형 AI, LLM, 머신러닝, 인공지능 산업)
     "거대언어모델", "머신러닝", "딥러닝", "반도체", "설비투자",
     "생성형 ai", "수출규제", "인공지능", "엔비디아", "자본지출",
-    "파운드리", "ai 버블",
+    "파운드리", "ai 버블", "ai 모델", "ai 데이터센터", "agentic",
     "agentic ai", "ai capex", "ai infrastructure", "ai model", "ai valuation",
     "anthropic", "artificial intelligence", "deep learning", "export control", "foundry",
     "gemini", "generative ai", "generative ai business", "gpt", "hbm",
@@ -21,10 +21,10 @@ INTEREST_KEYWORDS = [
     # 💼 대체투자 (PE, VC, AC, 스타트업 투자, M&A)
     "기업공개", "모태펀드", "밸류에이션", "벤처캐피탈", "사모펀드",
     "스타트업", "시드", "시리즈a", "시리즈b", "액셀러레이터",
-    "인수합병", "투자유치", "펀드결성",
+    "인수합병", "투자유치", "펀드결성", "투자", "유치", "펀드",
     "accelerator", "buyout", "fundraising", "ipo", "m&a",
     "mergers and acquisitions", "pe fund", "private equity", "seed round", "series a",
-    "series b", "startup funding", "valuation", "vc fund", "venture capital",
+    "series b", "startup funding", "valuation", "vc fund", "venture capital", "funding", "round",
     
     # 🌐 거시경제 (금리, 인플레이션, 미 연준, 한국은행, 경기 동향)
     "거시경제", "경기침체", "관세", "국채금리", "금리",
@@ -36,31 +36,32 @@ INTEREST_KEYWORDS = [
     "ppi", "protectionism", "recession", "tariff", "trade war", "usd"
 ]
 
-# 2. 키워드 기반 카테고리 자동 분류 체계
+# 2. 키워드 기반 카테고리 자동 분류 체계 (분류 정확도 극대화)
 CATEGORIES = {
     "🌱 임팩트": [
         "esg", "climate", "sustainability", "green tech", "renewable",
         "carbon", "clean energy", "social impact", "circular economy", "cbam",
-        "기후리스크", "소셜임팩트", "기후테크", "친환경", "탄소중립", "순환경제", "임팩트투자", "esg 공시"
+        "기후리스크", "소셜임팩트", "기후테크", "친환경", "탄소중립", "순환경제", "임팩트투자", "esg 공시", "에너지전환", "신재생에너지"
     ],
     "🤖 AI": [
         "artificial intelligence", "machine learning", "deep learning",
         "llm", "gpt", "ai model", "generative", "nvidia", "semiconductor", "hbm", "foundry", "ai capex",
-        "생성형 ai", "인공지능", "거대언어모델", "머신러닝", "딥러닝", "엔비디아", "반도체", "파운드리", "수출규제"
+        "openai", "agentic", "agentic ai", "anthropic", "gemini", "hugging face",
+        "생성형 ai", "인공지능", "거대언어모델", "머신러닝", "딥러닝", "엔비디아", "반도체", "파운드리", "수출규제", "ai 모델", "ai 데이터센터"
     ],
     "💼 대체투자": [
         "venture capital", "private equity", "funding", "seed round",
-        "series a", "series b", "m&a", "accelerator", "buyout", "ipo", "valuation",
-        "스타트업", "벤처캐피탈", "액셀러레이터", "모태펀드", "사모펀드", "투자유치", "인수합병", "기업공개", "밸류에이션"
+        "series a", "series b", "m&a", "accelerator", "buyout", "ipo", "valuation", "round", "fundraising",
+        "스타트업", "벤처캐피탈", "액셀러레이터", "모태펀드", "사모펀드", "투자유치", "인수합병", "기업공개", "밸류에이션", "시드", "시리즈a", "시리즈b", "펀드결성"
     ],
     "🌐 거시경제": [
         "interest rate", "inflation", "federal reserve", "fed", "central bank",
         "gdp", "recession", "macroeconomy", "fomc", "cpi", "tariff", "trade war", "exchange rate",
-        "거시경제", "금리", "인플레이션", "한국은행", "기준금리", "환율", "관세", "무역갈등", "소비자물가", "국채금리"
+        "거시경제", "금리", "인플레이션", "한국은행", "기준금리", "환율", "관세", "무역갈등", "소비자물가", "국채금리", "통화정책"
     ]
 }
 
-# 3. 절대 수집하면 안 되는 블랙리스트 (광고, 쿠폰, 쇼핑, 개발자 벤치마크 차단)
+# 3. 절대 수집하면 안 되는 블랙리스트 (스팸, 쇼핑, 단순 사건·사고·기업분쟁 차단)
 BLACKLIST_KEYWORDS = [
     # 스팸 / 쇼핑 / 프로모션 차단
     "coupon", "promo", "discount", "off", "deal", "airdoctor", "booking.com",
@@ -71,10 +72,13 @@ BLACKLIST_KEYWORDS = [
     "election", "movie", "tv show", "gossip",
     
     # 개발자 튜토리얼 / 단순 코드 리뷰 차단
-    "github repo", "code walkthrough", "benchmarking"
+    "github repo", "code walkthrough", "benchmarking",
+    
+    # 기업 사건·사고 / 노사갈등 / 단순 공방 차단 (제련소 논란 등 방지)
+    "논란", "의혹", "고발", "배임", "횡령", "제련소", "파업", "충돌"
 ]
 
-# 4. 뉴스 수집 사이트 (RSS 피드) - 국내외 핵심 매체 통합
+# 4. 뉴스 수집 사이트 (RSS 피드)
 RSS_SOURCES = {
     # --- 🇰🇷 국내 스타트업 / VC / ESG / IT 비즈니스 ---
     "Platum (플랫텀)": "https://platum.kr/feed",
@@ -96,7 +100,7 @@ RSS_SOURCES = {
     "Wired": "https://www.wired.com/feed/rss",
 }
 
-# 5. Hacker News 검색어 (개발자용 슬롭을 줄이고 투자/산업에 집중)
+# 5. Hacker News 검색어
 HN_KEYWORDS = [
     "climate tech", "ESG", "Nvidia", "AI funding", "AI capex",
     "venture capital", "private equity", "inflation", "federal reserve"
