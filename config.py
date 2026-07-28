@@ -124,13 +124,42 @@ MACRO_KW = [
 # ---------------------------------------------------------------------------
 # 카테고리(분류) = 위 리스트 그대로. 수집필터는 자동 생성 → 어긋남 없음.
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# 👔 인사이트 (MBB / Big4)  — ★5번째 카테고리 (주로 '출처' 기반으로 배정됨)
+#   키워드로도 최소 포착하되, 실제 배정은 INSIGHT_SOURCES/센더 오버라이드가 주도.
+# ---------------------------------------------------------------------------
+INSIGHT_KW = [
+    "management consulting", "corporate strategy", "executive perspective",
+    "thought leadership", "경영전략", "컨설팅 인사이트", "산업 리포트",
+    "mckinsey", "bcg", "bain", "deloitte", "kpmg", "strategy+business",
+]
+
 CATEGORIES = {
     "🌱 임팩트": IMPACT_KW,
     "🤖 AI": AI_KW,
     "💼 대체투자": ALT_KW,
     "🌐 거시·정책·지정학": MACRO_KW,
+    "👔 인사이트": INSIGHT_KW,
 }
 INTEREST_KEYWORDS = sorted(set(k for kws in CATEGORIES.values() for k in kws))
+
+# 인사이트로 '출처 기반' 강제 배정할 소스/센더 (키워드 무관)
+INSIGHT_SOURCES = {
+    "McKinsey Insights", "PwC strategy+business", "MBB/Big4 insights",
+    "MIT Sloan Management",
+}
+INSIGHT_SENDER_HINTS = [   # 뉴스레터 발신자/제목에 이게 있으면 인사이트로
+    "mckinsey", "bcg", "boston consulting", "bain", "deloitte", "kpmg",
+    "pwc", "strategy+business", "ey ", "ernst", "sloan",
+]
+
+def is_insight_source(name: str) -> bool:
+    if not name:
+        return False
+    if name in INSIGHT_SOURCES:
+        return True
+    low = name.lower()
+    return any(h in low for h in INSIGHT_SENDER_HINTS)
 
 # ---------------------------------------------------------------------------
 # 인물·기관 워치리스트 (강신호 — 매처에서 WATCHLIST_WEIGHT 가중치 권장)
@@ -233,7 +262,7 @@ RSS_SOURCES = {
 }
 
 # ── 지역/도메인 가중치 : 임팩트·AI·대체투자 기사에 한해 '해외 소스' 가점 ──
-OVERSEAS_PREFERRED_DOMAINS = ["🌱 임팩트", "🤖 AI", "💼 대체투자"]   # ➕ 사용자 지정
+OVERSEAS_PREFERRED_DOMAINS = ["🌱 임팩트", "🤖 AI", "💼 대체투자", "👔 인사이트"]  # ➕ 사용자 지정
 KR_SOURCES = {                                                       # 국내 소스만 명시(나머지 global)
     "ImpactOn (임팩트온)", "Platum (플랫텀)", "VentureSquare (벤처스퀘어)",
     "한경 Geeks (벤처/VC)", "전자신문 (벤처/스타트업)",
@@ -301,6 +330,31 @@ GOOGLE_NEWS_QUERIES_EN = {
 }
 GOOGLE_NEWS_FEEDS.update({k: _GNEWS_EN.format(q=v) for k, v in GOOGLE_NEWS_QUERIES_EN.items()})
 
+# ── 키워드 자동 업데이트 훅 ──────────────────────────────────────────────
+# weekly_keywords.json 이 있으면 그 안의 트렌드 용어를 Google News 쿼리에 OR로 끼워
+# 새 피드를 자동 생성한다. (주 1회 잡이 이 JSON을 갱신 → 코드 수정 없이 반영)
+#   형식: {"트럼프 관세": ["보편관세","IEEPA"], "AI 반도체": ["HBM4","CoWoS"]}
+import json as _json, os as _os
+def _load_trend_feeds():
+    path = _os.path.join(_os.path.dirname(__file__), "weekly_keywords.json")
+    if not _os.path.exists(path):
+        return {}
+    try:
+        data = _json.load(open(path, encoding="utf-8"))
+    except Exception:
+        return {}
+    feeds = {}
+    for anchor_kw, terms in (data or {}).items():
+        if anchor_kw.startswith("_"):
+            continue
+        terms = [t for t in (terms or []) if t]
+        if not terms:
+            continue
+        q = f"{anchor_kw} (" + " OR ".join(terms) + ")"
+        feeds[f"trend:{anchor_kw}"] = _GNEWS.format(q=q)
+    return feeds
+GOOGLE_NEWS_FEEDS.update(_load_trend_feeds())
+
 # ── 러너용 통합 피드(원하면 이걸로 일괄 순회) ──
 ALL_FEEDS = {**RSS_SOURCES, **GENERATED_FEEDS, **NEWSLETTER_FEEDS, **GOOGLE_NEWS_FEEDS}
 
@@ -325,6 +379,10 @@ MAX_ARTICLES_PER_RUN = 24        # ✅ AI/대체투자 축 늘어난 만큼 상�
 MAX_PER_CATEGORY = 7             # ➕ 카테고리별 상한
 RECENCY_HOURS = 36
 
+# LLM 리랭크 사용 시(GEMINI_API_KEY 있을 때)만 적용되는 발송 임계점수(0=끄기).
+# 예: 80 이면 llm_score 80점 미만은 발송 제외. 규칙 랭킹만 쓸 땐 무시됨.
+LLM_SEND_MIN_SCORE = 0
+
 # ---------------------------------------------------------------------------
 # 매처 권장 가드 (config만으론 미적용 — 매처 코드에 반영 권장)
 # ---------------------------------------------------------------------------
@@ -339,41 +397,3 @@ ALL_WATCHLISTS = WATCHLIST_MACRO + WATCHLIST_VC_PE + WATCHLIST_AI
 ACRONYM_KEYWORDS = ["AI", "M&A", "IPO", "CPI", "PCE", "PPI", "HBM", "GPU", "TPU",
                     "NPU", "RAG", "LBO", "IRR", "MOIC", "DPI", "TVPI", "DXY",
                     "IRA", "GDP", "FOMC", "ESS", "ECB", "WTO", "RCPS", "SBVA"]
-
-# ---------------------------------------------------------------------------
-# 🚀 [추가] 인텔리전스 랭킹 엔진 및 재탕 방지 설정
-# ---------------------------------------------------------------------------
-# 최근 발송된 이슈 제목 저장용 파일
-RECENT_TITLES_FILE = "recent_briefing_titles.txt"
-
-# 팩트 / 액션 동사 가점 (+3점 ~ +4점)
-ISSUE_HIGH_VALUE_SIGNALS = [
-    "인수", "투자", "발표", "상장", "IPO", "M&A", "실적", "최대", "최초",
-    "유치", "조원", "억원", "시리즈", "수출", "통과", "승인", "체결",
-    "acquires", "invests", "launches", "raises", "funding", "revenue"
-]
-
-# 저가치 노이즈 키워드 폭탄 감점 (-14점) -> 기존 SOFT_PENALTY보다 강력한 억제력
-
-
-ISSUE_LOW_VALUE_SIGNALS = [
-    # 🚨 거시/경제 기사를 살리기 위해 "전망", "주가", "증시" 단독 단어는 제거!
-    
-    # 1. 주식/어뷰징성 노이즈 핀셋 타격
-    "수혜주", "특징주", "테마주", "관련주", "대장주",
-    "목표가", "투자의견", "상한가", "하한가", "개미", "순매수", "개인투자자", 
-    
-    # 2. 오피니언/잡담 노이즈
-    "칼럼", "인터뷰", "오피니언", "사설", "시론", "분석해보니", "기자수첩",
-    
-    # 3. 단순 행사/홍보/PR (이전 응답에서 잡아낸 것들)
-    "경진대회", "박람회", "모집", "공모전", "페스티벌", "시상식", "개최",
-    
-    # 4. 범용 과학/추측성 영문 기사
-    "solar storm", "may be"
-]
-
-# 과거 기사 재탕 판정 기준 및 패널티 (65% 이상 유사하면 -18점 감점)
-PAST_ISSUE_THRESHOLD = 0.65
-RECENT_ISSUE_PENALTY = -18.0
-
