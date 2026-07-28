@@ -4,13 +4,13 @@ import requests
 from datetime import datetime
 
 from fetchers import hackernews, rss_feeds
-# 뉴스레터 모듈이 없거나 에러가 나면 조용히 무시하고 넘어감
 try:
     from fetchers import newsletters
     HAS_NEWSLETTERS = True
 except ImportError:
     HAS_NEWSLETTERS = False
     print("ℹ️ 뉴스레터 모듈을 찾을 수 없어 수집 단계에서 제외합니다.")
+
 from processor.deduplicator import deduplicate_and_merge
 from processor.summarizer import summarize, keyword_hit
 from processor.reranker import rerank_by_category, is_enabled as llm_enabled
@@ -29,8 +29,8 @@ except ImportError:
     LLM_SEND_MIN_SCORE = 0
 
 SEEN_FILE = "seen_news.txt"
-SEEN_TITLES_FILE = "seen_titles.txt"        # 날짜 넘는 이슈 중복 억제용
-CATEGORY_ORDER = list(CATEGORIES.keys())    # 임팩트/AI/대체투자/거시/인사이트 (config에서 동적)
+SEEN_TITLES_FILE = "seen_titles.txt"
+CATEGORY_ORDER = list(CATEGORIES.keys())
 MIN_PER_CATEGORY_WARN = 3
 
 
@@ -45,13 +45,14 @@ def _save_lines(path, items, cap=5000):
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(list(items)[-cap:]))
         
+
 def is_same_news_issue(title_a: str, title_b: str, threshold: float = 0.65) -> bool:
-    """Jaccard 유사도로 과거 기사 제목과의 중복(재탕) 여부를 빠르게 판별"""
     tokens_a = {w for w in re.sub(r'[^\w\s]', ' ', title_a.lower()).split() if len(w) >= 2}
     tokens_b = {w for w in re.sub(r'[^\w\s]', ' ', title_b.lower()).split() if len(w) >= 2}
     if not tokens_a or not tokens_b:
         return False
     return (len(tokens_a & tokens_b) / len(tokens_a | tokens_b)) >= threshold
+
 
 def is_relevant(article: dict) -> bool:
     text = (article.get("title", "") + " " + article.get("description", "")).lower()
@@ -77,8 +78,8 @@ def get_primary_source(article: dict) -> str:
         return src[0] if src else ""
     return src
 
+
 def clean_source_name(source: str) -> str:
-    """언론사 이름 중복 괄호 제거 및 깔끔 매핑 (국내는 한글, 해외는 영어)"""
     mapping = {
         "ImpactOn (임팩트온)": "임팩트온",
         "ImpactOn": "임팩트온",
@@ -94,14 +95,11 @@ def clean_source_name(source: str) -> str:
     }
     if source in mapping:
         return mapping[source]
-        
-    # 매핑에 없는 경우 괄호와 괄호 안 내용만 깔끔하게 삭제 (예: "매일경제 (스타트업)" -> "매일경제")
     cleaned = re.sub(r'\s*\(.*?\)', '', source).strip()
     return cleaned if cleaned else source
-    
+
 
 def fmt_date(date_str: str) -> str:
-    """YYYY-MM-DD → YY.MM.DD (없으면 오늘)."""
     for fmt in ("%Y-%m-%d",):
         try:
             return datetime.strptime(date_str, fmt).strftime("%y.%m.%d")
@@ -116,7 +114,7 @@ def _article_region(article: dict) -> str:
 
 def _selection_score(article: dict, category: str) -> float:
     llm = article.get("llm_score")
-    if llm is not None:                 # LLM이 매긴 카테고리 내 점수(0~100)
+    if llm is not None:
         return float(llm)
     score = float(article.get("relevance", 0))
     if category in OVERSEAS_PREFERRED_DOMAINS and _article_region(article) == "global":
@@ -144,7 +142,6 @@ def send_aggregated_slack_news(articles) -> bool:
         ranked = sorted(buckets[cat_name], key=lambda a: _selection_score(a, cat_name), reverse=True)
         selected, nvidia = [], 0
         
-        # 1차 시도: LLM 점수 임계값 이상인 고품질 기사부터 픽
         for a in ranked:
             tl = a.get("title", "").lower()
             if "nvidia" in tl or "엔비디아" in tl:
@@ -152,13 +149,11 @@ def send_aggregated_slack_news(articles) -> bool:
                     continue
                 nvidia += 1
             if a.get("llm_score") is not None and a["llm_score"] < LLM_SEND_MIN_SCORE:
-                continue     # 임계 미달 시 1차 픽에서는 패스
+                continue
             selected.append(a)
             if len(selected) >= MAX_PER_CATEGORY:
                 break
 
-        # 🚨 [신규] 최소 3개(MIN_PER_CATEGORY_WARN) 구제 로직:
-        # 1차에서 임계값 때문에 기사가 1~2개밖에 안 뽑혔다면, 남은 기사 중 점수 높은 순으로 3개까지 강제 보충!
         if len(selected) < MIN_PER_CATEGORY_WARN:
             for a in ranked:
                 if a in selected:
@@ -179,14 +174,21 @@ def send_aggregated_slack_news(articles) -> bool:
             for a in selected:
                 title = a.get("title", "제목 없음").strip()
                 url = get_primary_link(a) or "#"
-                
-                # 🚀 [신규] 언론사 이름 깔끔하게 1번만 출력하도록 클리닝 함수 적용
                 raw_source = get_primary_source(a) or "출처미상"
                 source = clean_source_name(raw_source)
-                
                 date = fmt_date(a.get("date", ""))
                 message_text += f"• <{url}|{title}> ({source}, {date})\n"
             message_text += "\n"
+
+    if not has_news:
+        message_text += "오늘 조건에 맞는 새로운 뉴스가 없습니다."
+
+    resp = requests.post(slack_webhook_url, json={"text": message_text})
+    if resp.status_code == 200:
+        print("슬랙 메시지 통합 전송 성공!")
+        return True
+    print(f"슬랙 전송 실패: {resp.status_code}, {resp.text}")
+    return False
 
 
 def main():
@@ -198,7 +200,6 @@ def main():
     all_errors.extend(hn_errors)
     all_articles.extend(hn_articles)
     
-# --- 🚀 [수정] 뉴스레터 수집 (없거나 실패 시 안전하게 스킵) ---
     if HAS_NEWSLETTERS:
         try:
             print("📬 뉴스레터 수집 시도 중...")
@@ -216,9 +217,6 @@ def main():
     all_errors.extend(rss_errors)
     all_articles.extend(rss_articles)
 
-    
-
-    # 키워드/링크/이슈(날짜 넘는) 중복 필터
     filtered = []
     for art in all_articles:
         link = get_primary_link(art)
@@ -243,7 +241,6 @@ def main():
         classified.append(art)
     classified.sort(key=lambda a: a.get("relevance", 0), reverse=True)
 
-    # LLM 리랭크(키 있으면 카테고리별, 없으면 규칙 그대로)
     classified = rerank_by_category(classified, CATEGORY_ORDER)
     if llm_enabled():
         print("LLM 리랭크 적용됨 (Gemini)")
