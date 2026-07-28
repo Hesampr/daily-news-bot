@@ -1,4 +1,5 @@
 import os
+import re
 import requests
 from datetime import datetime
 
@@ -43,7 +44,14 @@ def _load_lines(path) -> list:
 def _save_lines(path, items, cap=5000):
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(list(items)[-cap:]))
-
+        
+def is_same_news_issue(title_a: str, title_b: str, threshold: float = 0.65) -> bool:
+    """Jaccard 유사도로 과거 기사 제목과의 중복(재탕) 여부를 빠르게 판별"""
+    tokens_a = {w for w in re.sub(r'[^\w\s]', ' ', title_a.lower()).split() if len(w) >= 2}
+    tokens_b = {w for w in re.sub(r'[^\w\s]', ' ', title_b.lower()).split() if len(w) >= 2}
+    if not tokens_a or not tokens_b:
+        return False
+    return (len(tokens_a & tokens_b) / len(tokens_a | tokens_b)) >= threshold
 
 def is_relevant(article: dict) -> bool:
     text = (article.get("title", "") + " " + article.get("description", "")).lower()
