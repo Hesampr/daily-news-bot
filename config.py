@@ -33,7 +33,7 @@ ALT_KW = [
     "growth equity", "fund of funds", "lp", "gp", "dry powder",
     "대체투자", "사모펀드", "벤처캐피탈", "사모채권", "인프라펀드",
     "부동산펀드", "세컨더리", "바이아웃", "그로스에쿼티", "출자자",
-    "운용사", "드라이파우더", "블라인드펀드", "모태펀드", "공제회", "스타트업",
+    "운용사", "드라이파우더", "블라인드펀드", "모태펀드", "공제회", "스타트업", "투자유치",
 ]
 
 MACRO_KW = [
@@ -42,7 +42,7 @@ MACRO_KW = [
     "trade war", "supply chain", "sanctions", "oil price", "opec",
     "기준금리", "인플레이션", "물가상승", "경기침체", "연준", "한국은행",
     "지정학", "관세", "무역전쟁", "공급망", "제재", "유가", "환율",
-    "미중갈등", "중동", "우크라이나", "대만",
+    "미중갈등", "중동", "우크라이나", "대만", "통화정책",
 ]
 
 INSIGHTS_KW = [
@@ -56,7 +56,7 @@ INTEREST_KEYWORDS = sorted(set(IMPACT_KW + AI_KW + ALT_KW + MACRO_KW + INSIGHTS_
 HN_KEYWORDS = INTEREST_KEYWORDS
 
 # ---------------------------------------------------------------------------
-# 2. 카테고리 및 발송/점수 설정 (🚀 누락된 변수 완벽 보강!)
+# 2. 카테고리 및 발송/점수 설정
 # ---------------------------------------------------------------------------
 CATEGORIES = {
     "🌱 임팩트": IMPACT_KW,
@@ -69,12 +69,11 @@ CATEGORIES = {
 OVERSEAS_PREFERRED_DOMAINS = ["🌱 임팩트", "🤖 AI", "💼 대체투자", "👔 MBB·Big4 인사이트"]
 REGION_WEIGHT = {"global": 1.35, "korea": 1.0}
 MAX_PER_CATEGORY = 4
-LLM_SEND_MIN_SCORE = 0       # LLM 편집장이 자율 판단하도록 0으로 설정
+LLM_SEND_MIN_SCORE = 0
 
-# 🚨 [여기서 에러가 났던 것입니다!] 모듈들이 찾는 점수/중복 판단 가중치 변수
-SIMILARITY_THRESHOLD = 0.85  # deduplicator.py 용 (중복 기사 병합 기준)
-WATCHLIST_WEIGHT = 1.2       # summarizer.py 용 (주요 관심기업 가중치)
-SOFT_PENALTY_KEYWORDS = [    # summarizer.py 용 (단순 주가/특징주 기사 감점)
+SIMILARITY_THRESHOLD = 0.85
+WATCHLIST_WEIGHT = 1.2
+SOFT_PENALTY_KEYWORDS = [
     "특징주", "목표가", "상한가", "하한가", "종목추천", "리딩", "주가전망"
 ]
 
@@ -94,7 +93,7 @@ BLACKLIST_KEYWORDS = [
 ]
 
 # ---------------------------------------------------------------------------
-# 4. RSS 피드 (🚀 ALL_FEEDS / RSS_FEEDS 이름 완벽 호환!)
+# 4. RSS 피드 (모듈 간 이름 완벽 호환)
 # ---------------------------------------------------------------------------
 ALL_FEEDS = {
     "ImpactAlpha": "https://impactalpha.com/feed/",
@@ -119,10 +118,12 @@ RSS_FEEDS = ALL_FEEDS
 RSS_SOURCES = ALL_FEEDS
 
 # ---------------------------------------------------------------------------
-# 5. 구글 뉴스 (🚀 한경/매경/로이터 등 1군 언론사 속보만 핀셋 수집!)
+# 5. 구글 뉴스 (🚀 5개 전 분야 기사 공급선 완벽 복구!)
 # ---------------------------------------------------------------------------
 GOOGLE_NEWS_FEEDS = {
-    "국내 벤처/스타트업": "https://news.google.com/rss/search?q=(%ED%88%AC%EC%9E%90%EC%9C%A0%EC%B9%98+%ED%8E%80%EB%94%A9+M%26A+OR+%EC%8B%9C%EB%A6%AC%EC%A6%88)+when:1d+(source:%ED%95%9C%EA%B5%AD%EA%B5%BF%EC%A0%9C+OR+source:%EB%A7%A4%EC%9D%BC%EA%B5%BF%EC%A0%9C+OR+source:%EC%A0%84%EC%9E%90%EC%8B%A0%EB%AC%B8)&hl=ko&gl=KR&ceid=KR:ko",
-    "글로벌 AI/매크로": "https://news.google.com/rss/search?q=(AI+OR+FOMC+OR+interest+rate+OR+tariff)+when:1d+(source:Bloomberg+OR+source:Reuters+OR+source:Financial+Times)&hl=en-US&gl=US&ceid=US:en",
-    "MBB/Big4 인사이트": "https://news.google.com/rss/search?q=(McKinsey+OR+BCG+OR+Bain+OR+Deloitte)+(AI+OR+climate+OR+private+equity)&hl=en-US&gl=US&ceid=US:en"
+    "국내 VC/스타트업 투자": "https://news.google.com/rss/search?q=(%ED%88%AC%EC%9E%90%EC%9C%A0%EC%B9%98+OR+%ED%8E%80%EB%94%A9+OR+M%26A+OR+%EC%8B%9C%EB%A6%AC%EC%A6%88A+OR+%EC%8B%9C%EB%A6%AC%EC%A6%88B)+when:1d&hl=ko&gl=KR&ceid=KR:ko",
+    "글로벌 VC/PE 펀딩": "https://news.google.com/rss/search?q=(venture+capital+OR+private+equity+OR+funding+round+OR+dry+powder)+when:1d&hl=en-US&gl=US&ceid=US:en",
+    "미국 통화정책/금리": "https://news.google.com/rss/search?q=(FOMC+OR+%EC%97%B0%EC%A4%80+OR+%EA%B8%B0%EC%A4%80%EA%B8%88%EB%A6%AC+OR+inflation)+when:1d&hl=ko&gl=KR&ceid=KR:ko",
+    "글로벌 거시/지정학": "https://news.google.com/rss/search?q=(interest+rate+OR+recession+OR+tariff+OR+geopolitics)+when:1d&hl=en-US&gl=US&ceid=US:en",
+    "MBB/Big4 인사이트": "https://news.google.com/rss/search?q=(McKinsey+OR+BCG+OR+Bain+OR+Deloitte+OR+PwC)+report&hl=en-US&gl=US&ceid=US:en"
 }
