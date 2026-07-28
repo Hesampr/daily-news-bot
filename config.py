@@ -188,7 +188,12 @@ BLACKLIST_KEYWORDS = [
     "github repo", "code walkthrough",
     "배임", "횡령", "파업",
 ]
-SOFT_PENALTY_KEYWORDS = ["논란", "의혹", "고발", "제련소"]
+SOFT_PENALTY_KEYWORDS = [
+    "논란", "의혹", "고발", "제련소",
+    # 소비자/how-to 노이즈(임팩트 피드의 DIY·구매가이드류 걸러내기)
+    "diy", "on a budget", "gift guide", "buying guide", "buyer's guide",
+    "best portable", "hands-on",
+]
 
 # ---------------------------------------------------------------------------
 # RSS 소스 (name -> url)  ※ 기존 로더 호환 위해 dict 유지
