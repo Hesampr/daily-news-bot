@@ -19,6 +19,7 @@ from config import (
     BLACKLIST_KEYWORDS,
     HN_KEYWORDS,
     CATEGORIES,
+    MAX_PER_CATEGORY_DICT,
     MAX_PER_CATEGORY,
     OVERSEAS_PREFERRED_DOMAINS,
     REGION_WEIGHT,
@@ -139,6 +140,7 @@ def send_aggregated_slack_news(articles) -> bool:
     has_news = False
 
     for cat_name in CATEGORY_ORDER:
+        max_limit = MAX_PER_CATEGORY_DICT.get(cat_name, MAX_PER_CATEGORY)
         ranked = sorted(buckets[cat_name], key=lambda a: _selection_score(a, cat_name), reverse=True)
         selected, nvidia = [], 0
         
@@ -151,10 +153,10 @@ def send_aggregated_slack_news(articles) -> bool:
             if a.get("llm_score") is not None and a["llm_score"] < LLM_SEND_MIN_SCORE:
                 continue
             selected.append(a)
-            if len(selected) >= MAX_PER_CATEGORY:
+            if len(selected) >= max_limit:
                 break
 
-        if len(selected) < MIN_PER_CATEGORY_WARN:
+        if len(selected) < MIN_PER_CATEGORY_WARN and cat_name != "👔 MBB·Big4 인사이트":
             for a in ranked:
                 if a in selected:
                     continue
@@ -164,9 +166,6 @@ def send_aggregated_slack_news(articles) -> bool:
                 selected.append(a)
                 if len(selected) >= MIN_PER_CATEGORY_WARN:
                     break
-
-        if 0 < len(selected) < MIN_PER_CATEGORY_WARN:
-            print(f"⚠️ [경고] '{cat_name}' 수집된 기사 총량 자체가 {len(selected)}개로 3개 미만입니다.")
 
         if selected:
             has_news = True
