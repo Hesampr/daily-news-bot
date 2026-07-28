@@ -1,14 +1,11 @@
 import os
-import re
-import urllib.parse
-import base64
 import requests
 from datetime import datetime
 
-from fetchers import hackernews, rss_feeds
-from processor.deduplicator import deduplicate_and_merge
+from fetchers import hackernews, rss_feeds, newsletters
+from processor.deduplicator import deduplicate_and_merge, is_same_news_issue
 from processor.summarizer import summarize, keyword_hit
-import config
+from processor.reranker import rerank_by_category, is_enabled as llm_enabled
 from config import (
     INTEREST_KEYWORDS,
     BLACKLIST_KEYWORDS,
@@ -17,85 +14,30 @@ from config import (
     MAX_PER_CATEGORY,
     OVERSEAS_PREFERRED_DOMAINS,
     REGION_WEIGHT,
-    source_region,
 )
+try:
+    from config import LLM_SEND_MIN_SCORE
+except ImportError:
+    LLM_SEND_MIN_SCORE = 0
 
 SEEN_FILE = "seen_news.txt"
-CATEGORY_ORDER = list(CATEGORIES.keys())
+SEEN_TITLES_FILE = "seen_titles.txt"        # 날짜 넘는 이슈 중복 억제용
+CATEGORY_ORDER = list(CATEGORIES.keys())    # 임팩트/AI/대체투자/거시/인사이트 (config에서 동적)
 MIN_PER_CATEGORY_WARN = 3
 
-# ===================================================================
-# 🚀 [기능 1] URL 히스토리 및 최근 제목(재탕 방지) 관리
-# ===================================================================
-def load_seen() -> set:
-    if not os.path.exists(SEEN_FILE):
-        return set()
-    with open(SEEN_FILE, "r") as f:
-        return set(line.strip() for line in f if line.strip())
 
-def save_seen(seen: set) -> None:
-    trimmed = list(seen)[-5000:]
-    with open(SEEN_FILE, "w") as f:
-        f.write("\n".join(trimmed))
-
-def load_recent_titles() -> list:
-    file_path = getattr(config, "RECENT_TITLES_FILE", "recent_briefing_titles.txt")
-    if not os.path.exists(file_path):
+def _load_lines(path) -> list:
+    if not os.path.exists(path):
         return []
-    with open(file_path, "r", encoding="utf-8") as f:
-        return [line.strip() for line in f if line.strip()]
+    with open(path, "r", encoding="utf-8") as f:
+        return [ln.strip() for ln in f if ln.strip()]
 
-def save_recent_titles(new_titles: list) -> None:
-    file_path = getattr(config, "RECENT_TITLES_FILE", "recent_briefing_titles.txt")
-    existing = load_recent_titles()
-    combined = new_titles + existing
-    deduped = []
-    for t in combined:
-        if t not in deduped:
-            deduped.append(t)
-    with open(file_path, "w", encoding="utf-8") as f:
-        f.write("\n".join(deduped[:300]))  # 최근 300개 유지
 
-# ===================================================================
-# 🚀 [기능 2] 구글 뉴스 URL 원본 디코더
-# ===================================================================
-def resolve_google_news_url(url: str) -> str:
-    if not url or "news.google.com" not in url:
-        return url
-    try:
-        parsed = urllib.parse.urlparse(url)
-        path_parts = [p for p in parsed.path.split('/') if p]
-        if 'articles' in path_parts:
-            idx = path_parts.index('articles')
-            if idx + 1 < len(path_parts):
-                code = path_parts[idx + 1]
-                padded = code + '=' * (-len(code) % 4)
-                decoded_bytes = base64.b64decode(padded, altchars=b'-_')
-                decoded_str = decoded_bytes.decode('utf-8', errors='ignore')
-                found_urls = re.findall(r'https?://[^\s<>"{}|\^~\[\]`]+', decoded_str)
-                if found_urls:
-                    return found_urls[0].split('?')[0] # 파라미터 깎기
-    except Exception:
-        pass
-    return url
+def _save_lines(path, items, cap=5000):
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join(list(items)[-cap:]))
 
-# ===================================================================
-# 🚀 [기능 3] Jaccard 기반 중복(재탕) 판별기
-# ===================================================================
-def extract_story_tokens(text: str) -> set:
-    text = re.sub(r'[^\w\s]', ' ', text.lower())
-    return {word for word in text.split() if len(word) >= 2}
 
-def is_duplicate_story(title_a: str, title_b: str, threshold: float) -> bool:
-    tokens_a = extract_story_tokens(title_a)
-    tokens_b = extract_story_tokens(title_b)
-    if not tokens_a or not tokens_b:
-        return False
-    return (len(tokens_a & tokens_b) / len(tokens_a | tokens_b)) >= threshold
-
-# ===================================================================
-# 기존 헬퍼 함수들
-# ===================================================================
 def is_relevant(article: dict) -> bool:
     text = (article.get("title", "") + " " + article.get("description", "")).lower()
     for kw in BLACKLIST_KEYWORDS:
@@ -106,61 +48,51 @@ def is_relevant(article: dict) -> bool:
             return True
     return False
 
+
 def get_primary_link(article: dict) -> str:
     link = article.get("link", "")
     if isinstance(link, list):
         return link[0] if link else ""
     return link
 
-def _article_region(article: dict) -> str:
-    src = article.get("source")
-    names = src if isinstance(src, list) else [src]
-    return "global" if any(source_region(n) == "global" for n in names if n) else "kr"
 
-# ===================================================================
-# 🚀 [기능 4] 점수 엔진 고도화 (기존 relevance + 노이즈 필터링 + 재탕 패널티)
-# ===================================================================
-def _selection_score(article: dict, category: str, recent_titles: list) -> float:
-    # 1. 기존 processor에서 매긴 AI/키워드 relevance 가져오기
+def get_primary_source(article: dict) -> str:
+    src = article.get("source", "")
+    if isinstance(src, list):
+        return src[0] if src else ""
+    return src
+
+
+def fmt_date(date_str: str) -> str:
+    """YYYY-MM-DD → YY.MM.DD (없으면 오늘)."""
+    for fmt in ("%Y-%m-%d",):
+        try:
+            return datetime.strptime(date_str, fmt).strftime("%y.%m.%d")
+        except (ValueError, TypeError):
+            pass
+    return datetime.now().strftime("%y.%m.%d")
+
+
+def _article_region(article: dict) -> str:
+    return article.get("region", "global")
+
+
+def _selection_score(article: dict, category: str) -> float:
+    llm = article.get("llm_score")
+    if llm is not None:                 # LLM이 매긴 카테고리 내 점수(0~100)
+        return float(llm)
     score = float(article.get("relevance", 0))
-    title = article.get("title", "")
-    
-    # 2. 기존 로직: 해외 선호 도메인 가점
     if category in OVERSEAS_PREFERRED_DOMAINS and _article_region(article) == "global":
         score *= REGION_WEIGHT.get("global", 1.0)
-        
-    # 3. 신규 로직: 액션/팩트 가점
-    for kw in getattr(config, "ISSUE_HIGH_VALUE_SIGNALS", []):
-        if kw.lower() in title.lower(): 
-            score += 3.0
-            
-    if re.search(r'\d+(\.\d+)?\s*(%|조|억|달러|백만|천만|만|원)', title):
-        score += 4.0
-        
-    # 4. 신규 로직: 저가치 노이즈 폭탄 감점 (전망, 오피니언 등)
-    for kw in getattr(config, "ISSUE_LOW_VALUE_SIGNALS", []):
-        if kw in title: 
-            score -= 14.0
-            
-    # 5. 신규 로직: 어제 보낸 뉴스 재탕 시 폭탄 감점
-    past_threshold = getattr(config, "PAST_ISSUE_THRESHOLD", 0.65)
-    penalty = getattr(config, "RECENT_ISSUE_PENALTY", -18.0)
-    for past_title in recent_titles:
-        if is_duplicate_story(title, past_title, past_threshold):
-            score += penalty
-            break
-            
     return score
 
 
-def send_aggregated_slack_news(articles, recent_titles) -> tuple[bool, list]:
-    """카테고리별로 점수 상위 기사를 뽑아 전송하고, 전송된 기사 제목들을 반환"""
+def send_aggregated_slack_news(articles) -> bool:
     slack_webhook_url = os.environ.get("SLACK_WEBHOOK_URL")
     if not slack_webhook_url:
         print("SLACK_WEBHOOK_URL 이 설정되지 않았습니다.")
-        return False, []
+        return False
 
-    today_str = datetime.now().strftime("%Y-%m-%d")
     buckets = {cat: [] for cat in CATEGORY_ORDER}
     for a in articles:
         cat = a.get("category", CATEGORY_ORDER[-1])
@@ -170,26 +102,18 @@ def send_aggregated_slack_news(articles, recent_titles) -> tuple[bool, list]:
 
     message_text = "🗞️ *오늘의 주요 뉴스 브리핑*\n\n"
     has_news = False
-    sent_titles = []
 
     for cat_name in CATEGORY_ORDER:
-        # 고도화된 스코어링 반영
-        ranked = sorted(buckets[cat_name],
-                        key=lambda a: _selection_score(a, cat_name, recent_titles),
-                        reverse=True)
-
-        selected = []
-        nvidia_count = 0
+        ranked = sorted(buckets[cat_name], key=lambda a: _selection_score(a, cat_name), reverse=True)
+        selected, nvidia = [], 0
         for a in ranked:
-            # 점수가 너무 낮아진(감점을 맞은) 기사는 과감히 스킵
-            if _selection_score(a, cat_name, recent_titles) < 0:
-                continue
-                
-            title_lower = a.get("title", "").lower()
-            if "nvidia" in title_lower or "엔비디아" in title_lower:
-                if nvidia_count >= 2:
+            tl = a.get("title", "").lower()
+            if "nvidia" in tl or "엔비디아" in tl:
+                if nvidia >= 2:
                     continue
-                nvidia_count += 1
+                nvidia += 1
+            if a.get("llm_score") is not None and a["llm_score"] < LLM_SEND_MIN_SCORE:
+                continue     # LLM 임계 미달 컷(threshold 방식)
             selected.append(a)
             if len(selected) >= MAX_PER_CATEGORY:
                 break
@@ -203,27 +127,27 @@ def send_aggregated_slack_news(articles, recent_titles) -> tuple[bool, list]:
             for a in selected:
                 title = a.get("title", "제목 없음").strip()
                 url = get_primary_link(a) or "#"
-                date = a.get("date") or today_str
-                message_text += f"• <{url}|{title} ({date})>\n"
-                sent_titles.append(title)  # 히스토리 추가
+                source = get_primary_source(a) or "출처미상"
+                date = fmt_date(a.get("date", ""))
+                # 양식: 기사제목 (언론사, YY.MM.DD)
+                message_text += f"• <{url}|{title}> ({source}, {date})\n"
             message_text += "\n"
 
     if not has_news:
         message_text += "오늘 조건에 맞는 새로운 뉴스가 없습니다."
 
-    response = requests.post(slack_webhook_url, json={"text": message_text})
-    if response.status_code == 200:
+    resp = requests.post(slack_webhook_url, json={"text": message_text})
+    if resp.status_code == 200:
         print("슬랙 메시지 통합 전송 성공!")
-        return True, sent_titles
-    print(f"슬랙 전송 실패: {response.status_code}, {response.text}")
-    return False, []
+        return True
+    print(f"슬랙 전송 실패: {resp.status_code}, {resp.text}")
+    return False
 
 
 def main():
-    seen = load_seen()
-    recent_titles = load_recent_titles()
-    all_errors = []
-    all_articles = []
+    seen_links = set(_load_lines(SEEN_FILE))
+    seen_titles = _load_lines(SEEN_TITLES_FILE)
+    all_errors, all_articles = [], []
 
     hn_articles, hn_errors = hackernews.fetch(HN_KEYWORDS)
     all_errors.extend(hn_errors)
@@ -233,65 +157,57 @@ def main():
     all_errors.extend(rss_errors)
     all_articles.extend(rss_articles)
 
-    # --- 키워드/중복(seen) 필터 ---
+    nl_articles, nl_errors = newsletters.fetch()      # 지메일 미설정 시 빈 리스트
+    all_errors.extend(nl_errors)
+    all_articles.extend(nl_articles)
+
+    # 키워드/링크/이슈(날짜 넘는) 중복 필터
     filtered = []
-    for article in all_articles:
-        # 🚀 [적용] 구글 뉴스 원본 링크 추출을 가장 먼저 수행
-        raw_link = get_primary_link(article)
-        real_link = resolve_google_news_url(raw_link)
-        if isinstance(article.get("link"), list):
-            article["link"][0] = real_link
-        else:
-            article["link"] = real_link
-            
-        link = real_link
+    for art in all_articles:
+        link = get_primary_link(art)
+        title = art.get("title", "")
+        if not link or not title:
+            continue
+        if link in seen_links:
+            continue
+        if any(is_same_news_issue(title, old) for old in seen_titles[-800:]):
+            continue
+        if not is_relevant(art):
+            continue
+        filtered.append(art)
 
-        if not link or not article.get("title"):
-            continue
-        if link in seen:
-            continue
-        if not is_relevant(article):
-            continue
-        filtered.append(article)
-
-    # --- 유사 기사 병합 (당일 수집분) ---
     merged, dedup_errors = deduplicate_and_merge(filtered)
     all_errors.extend(dedup_errors)
 
-    # --- 분류 + relevance 점수 부여 (기존 AI 프로세서) ---
     classified = []
-    for article in merged:
-        article, sum_errors = summarize(article)
-        all_errors.extend(sum_errors)
-        classified.append(article)
-
-    # 전역 컷은 피하되, 전체 내림차순 정렬
+    for art in merged:
+        art, e = summarize(art)
+        all_errors.extend(e)
+        classified.append(art)
     classified.sort(key=lambda a: a.get("relevance", 0), reverse=True)
 
+    # LLM 리랭크(키 있으면 카테고리별, 없으면 규칙 그대로)
+    classified = rerank_by_category(classified, CATEGORY_ORDER)
+    if llm_enabled():
+        print("LLM 리랭크 적용됨 (Gemini)")
+
     if classified:
-        # 🚀 [적용] 슬랙 발송 시 최근 제목 히스토리 전달하여 재탕 방지
-        success, sent_titles = send_aggregated_slack_news(classified, recent_titles)
-        if success:
-            for article in classified:
-                links = article.get("link", [])
-                if isinstance(links, list):
-                    seen.update(links)
-                else:
-                    seen.add(links)
-            
-            # 발송 성공한 기사들의 제목을 재탕 방지 리스트에 업데이트
-            if sent_titles:
-                save_recent_titles(sent_titles)
+        if send_aggregated_slack_news(classified):
+            for art in classified:
+                links = art.get("link", [])
+                seen_links.update(links if isinstance(links, list) else [links])
+                seen_titles.append(art.get("title", ""))
     else:
         print("전송할 새로운 기사가 없습니다.")
 
-    save_seen(seen)
+    _save_lines(SEEN_FILE, seen_links)
+    _save_lines(SEEN_TITLES_FILE, seen_titles, cap=2000)
 
-    # --- 수집 오류 리포트 ---
     if all_errors:
         print(f"\n⚠️ 수집 오류 {len(all_errors)}건:")
         for e in all_errors:
             print(f"  • {e}")
+
 
 if __name__ == "__main__":
     main()
