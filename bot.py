@@ -17,7 +17,7 @@ SEEN_FILE = "seen_news.txt"
 CATEGORY_ORDER = [
     "🌱 임팩트",
     "🤖 AI",
-    "💼 대체투자 (PE, VC, AC)",
+    "💼 대체투자",
     "🌐 거시경제"
 ]
 
@@ -33,22 +33,25 @@ def save_seen(seen: set) -> None:
 
 def is_relevant(article: dict) -> bool:
     text = (article.get("title", "") + " " + article.get("description", "")).lower()
+    
+    # 1. 블랙리스트 단어 검사 (포함 시 즉시 제외)
     for kw in BLACKLIST_KEYWORDS:
         if kw.lower() in text:
             return False
-    for kw in INTEREST_KEYWORDS:
-        # 단어 앞뒤가 독립되어 있을 때만 합격 (예: 'ai'는 합격, 'airdoctor'는 불합격)
-        pattern = r'\b' + re.escape(kw.lower()) + r'\b'
-        if re.search(pattern, text):
-            return True
-    return False
             
-    # 2. 관심 키워드는 단어 앞뒤에 경계(\b)가 있는 '독립된 단어'일 때만 통과
+    # 2. 관심 키워드 검사 (영문은 \b 정규식, 한글은 일반 포함 검사)
     for kw in INTEREST_KEYWORDS:
-        pattern = r'\b' + re.escape(kw.lower()) + r'\b'
-        if re.search(pattern, text):
-            return True
-            
+        kw_lower = kw.lower()
+        # 영문/숫자로만 이루어진 단어(ai, llm 등)는 독립 단어일 때만 통과
+        if re.match(r'^[a-z0-9\s-]+$', kw_lower):
+            pattern = r'\b' + re.escape(kw_lower) + r'\b'
+            if re.search(pattern, text):
+                return True
+        else:
+            # 한국어(인공지능, 금리 등)는 조사(이/을/의)가 붙어있어도 통과하도록 in 검사
+            if kw_lower in text:
+                return True
+                
     return False
 
 def get_primary_link(article: dict) -> str:
@@ -58,7 +61,7 @@ def get_primary_link(article: dict) -> str:
     return link
 
 def send_aggregated_slack_news(articles) -> bool:
-    """수집·분류된 기사를 단 1개의 슬랙 메시지로 통합 전송합니다."""
+    """수집·분류된 기사를 4대 분야별 최대 5개씩 골라 1개의 슬랙 메시지로 전송합니다."""
     slack_webhook_url = os.environ.get("SLACK_WEBHOOK_URL")
     if not slack_webhook_url:
         print("SLACK_WEBHOOK_URL 이 설정되지 않았습니다.")
@@ -67,6 +70,7 @@ def send_aggregated_slack_news(articles) -> bool:
     categorized_news = {cat: [] for cat in CATEGORY_ORDER}
     today_str = datetime.now().strftime("%Y-%m-%d")
 
+    # 1. 카테고리별로 분류하여 담기
     for article in articles:
         title = article.get("title", "제목 없음").strip()
         url = get_primary_link(article) or "#"
@@ -76,20 +80,28 @@ def send_aggregated_slack_news(articles) -> bool:
         formatted_item = f"• <{url}|{title} ({date})>"
 
         for cat_name in CATEGORY_ORDER:
+            # 카테고리 이름이 부분 일치하면 해당 묶음에 추가
             if cat_name in category or category in cat_name:
-                if len(categorized_news[cat_name]) < 5:
-                    categorized_news[cat_name].append(formatted_item)
+                categorized_news[cat_name].append(formatted_item)
                 break
 
     message_text = "🗞️ *오늘의 주요 뉴스 브리핑*\n\n"
     has_news = False
 
+    # 2. 카테고리당 최소 3개 검증 및 최대 5개 선별 출력
     for cat_name in CATEGORY_ORDER:
         items = categorized_news[cat_name]
-        if items:
+        
+        if len(items) < 3 and len(items) > 0:
+            print(f"⚠️ [경고] '{cat_name}' 분야 기사가 {len(items)}개로 최소 기준(3개)보다 부족합니다.")
+            
+        # 최대 5개까지만 슬랙 메시지에 포함
+        sliced_items = items[:5]
+        
+        if sliced_items:
             has_news = True
             message_text += f"*{cat_name}*\n"
-            message_text += "\n".join(items) + "\n\n"
+            message_text += "\n".join(sliced_items) + "\n\n"
 
     if not has_news:
         message_text += "오늘 조건에 맞는 새로운 뉴스가 없습니다."
@@ -134,7 +146,9 @@ def main():
     # --- 유사 기사 병합 ---
     merged, dedup_errors = deduplicate_and_merge(filtered)
     all_errors.extend(dedup_errors)
-    merged = merged[:MAX_ARTICLES_PER_RUN]
+    
+    # 4대 분야별 3~5개씩 넉넉히 선별하기 위해 최대 35개까지 AI 분류로 보냄
+    merged = merged[:35]
 
     # --- AI 카테고리 분류 ---
     classified_articles = []
