@@ -1,25 +1,26 @@
 import os
-import re
 import requests
 from datetime import datetime
+
 from fetchers import hackernews, rss_feeds
 from processor.deduplicator import deduplicate_and_merge
-from processor.summarizer import summarize
+from processor.summarizer import summarize, keyword_hit
 from config import (
     INTEREST_KEYWORDS,
     BLACKLIST_KEYWORDS,
     HN_KEYWORDS,
-    RSS_SOURCES,
-    MAX_ARTICLES_PER_RUN,
+    CATEGORIES,
+    MAX_PER_CATEGORY,
+    OVERSEAS_PREFERRED_DOMAINS,
+    REGION_WEIGHT,
+    source_region,
 )
 
 SEEN_FILE = "seen_news.txt"
-CATEGORY_ORDER = [
-    "🌱 임팩트",
-    "🤖 AI",
-    "💼 대체투자",
-    "🌐 거시경제"
-]
+CATEGORY_ORDER = list(CATEGORIES.keys())     # ✅ config에서 동적으로 (하드코딩 제거)
+CANDIDATE_POOL = 120                          # 분류 후 relevance 상위 N개만 선별 대상으로
+MIN_PER_CATEGORY_WARN = 3
+
 
 def load_seen() -> set:
     if not os.path.exists(SEEN_FILE):
@@ -27,30 +28,24 @@ def load_seen() -> set:
     with open(SEEN_FILE, "r") as f:
         return set(line.strip() for line in f if line.strip())
 
+
 def save_seen(seen: set) -> None:
+    # 무한 증가 방지: 최근 5000개만 유지
+    trimmed = list(seen)[-5000:]
     with open(SEEN_FILE, "w") as f:
-        f.write("\n".join(seen))
+        f.write("\n".join(trimmed))
+
 
 def is_relevant(article: dict) -> bool:
     text = (article.get("title", "") + " " + article.get("description", "")).lower()
-    
-    # 1. 블랙리스트 단어 검사 (포함 시 즉시 제외)
     for kw in BLACKLIST_KEYWORDS:
-        if kw.lower() in text:
+        if keyword_hit(kw, text):
             return False
-            
-    # 2. 관심 키워드 검사 (영문은 \b 정규식, 한글은 일반 포함 검사)
     for kw in INTEREST_KEYWORDS:
-        kw_lower = kw.lower()
-        if re.match(r'^[a-z0-9\s-]+$', kw_lower):
-            pattern = r'\b' + re.escape(kw_lower) + r'\b'
-            if re.search(pattern, text):
-                return True
-        else:
-            if kw_lower in text:
-                return True
-                
+        if keyword_hit(kw, text):
+            return True
     return False
+
 
 def get_primary_link(article: dict) -> str:
     link = article.get("link", "")
@@ -58,58 +53,68 @@ def get_primary_link(article: dict) -> str:
         return link[0] if link else ""
     return link
 
+
+def _article_region(article: dict) -> str:
+    src = article.get("source")
+    names = src if isinstance(src, list) else [src]
+    return "global" if any(source_region(n) == "global" for n in names if n) else "kr"
+
+
+def _selection_score(article: dict, category: str) -> float:
+    """relevance 기반 + 해외선호 도메인에서 global 소스 가점."""
+    score = float(article.get("relevance", 0))
+    if category in OVERSEAS_PREFERRED_DOMAINS and _article_region(article) == "global":
+        score *= REGION_WEIGHT.get("global", 1.0)
+    return score
+
+
 def send_aggregated_slack_news(articles) -> bool:
-    """수집·분류된 기사를 4대 분야별 최대 5개씩 골라(도배 방지 적용) 슬랙으로 전송합니다."""
+    """카테고리별로 relevance(+해외가점) 상위 MAX_PER_CATEGORY개를 골라 슬랙 1회 전송."""
     slack_webhook_url = os.environ.get("SLACK_WEBHOOK_URL")
     if not slack_webhook_url:
         print("SLACK_WEBHOOK_URL 이 설정되지 않았습니다.")
         return False
 
-    categorized_news = {cat: [] for cat in CATEGORY_ORDER}
     today_str = datetime.now().strftime("%Y-%m-%d")
-
-    # 1. 카테고리별로 분류하여 담기
-    for article in articles:
-        title = article.get("title", "제목 없음").strip()
-        url = get_primary_link(article) or "#"
-        date = article.get("date") or today_str
-        category = article.get("category", "🌐 거시경제")
-
-        formatted_item = f"• <{url}|{title} ({date})>"
-
-        for cat_name in CATEGORY_ORDER:
-            if cat_name in category or category in cat_name:
-                categorized_news[cat_name].append((title.lower(), formatted_item))
-                break
+    buckets = {cat: [] for cat in CATEGORY_ORDER}
+    for a in articles:
+        cat = a.get("category", CATEGORY_ORDER[-1])
+        if cat not in buckets:
+            cat = CATEGORY_ORDER[-1]
+        buckets[cat].append(a)
 
     message_text = "🗞️ *오늘의 주요 뉴스 브리핑*\n\n"
     has_news = False
 
-    # 2. 특정 주제(엔비디아 등) 도배 방지 및 3~5개 선별
     for cat_name in CATEGORY_ORDER:
-        items = categorized_news[cat_name]
-        
-        selected_items = []
-        nvidia_count = 0  # 엔비디아 기사 카운터
-        
-        for title_lower, formatted_item in items:
-            # 엔비디아 관련 기사는 카테고리당 최대 2개까지만 허용
+        ranked = sorted(buckets[cat_name],
+                        key=lambda a: _selection_score(a, cat_name),
+                        reverse=True)
+
+        selected = []
+        nvidia_count = 0
+        for a in ranked:
+            title_lower = a.get("title", "").lower()
             if "nvidia" in title_lower or "엔비디아" in title_lower:
-                if nvidia_count >= 2:
+                if nvidia_count >= 2:      # 특정 주제 도배 방지
                     continue
                 nvidia_count += 1
-                
-            selected_items.append(formatted_item)
-            if len(selected_items) == 5:  # 최대 5개까지만 선별
+            selected.append(a)
+            if len(selected) >= MAX_PER_CATEGORY:
                 break
-        
-        if len(selected_items) < 3 and len(selected_items) > 0:
-            print(f"⚠️ [경고] '{cat_name}' 분야 기사가 {len(selected_items)}개로 최소 기준(3개)보다 부족합니다.")
-            
-        if selected_items:
+
+        if 0 < len(selected) < MIN_PER_CATEGORY_WARN:
+            print(f"⚠️ [경고] '{cat_name}' 기사 {len(selected)}개 — 최소 {MIN_PER_CATEGORY_WARN}개 미만.")
+
+        if selected:
             has_news = True
             message_text += f"*{cat_name}*\n"
-            message_text += "\n".join(selected_items) + "\n\n"
+            for a in selected:
+                title = a.get("title", "제목 없음").strip()
+                url = get_primary_link(a) or "#"
+                date = a.get("date") or today_str
+                message_text += f"• <{url}|{title} ({date})>\n"
+            message_text += "\n"
 
     if not has_news:
         message_text += "오늘 조건에 맞는 새로운 뉴스가 없습니다."
@@ -118,28 +123,24 @@ def send_aggregated_slack_news(articles) -> bool:
     if response.status_code == 200:
         print("슬랙 메시지 통합 전송 성공!")
         return True
-    else:
-        print(f"슬랙 전송 실패: {response.status_code}, {response.text}")
-        return False
+    print(f"슬랙 전송 실패: {response.status_code}, {response.text}")
+    return False
+
 
 def main():
     seen = load_seen()
     all_errors = []
     all_articles = []
 
-    # --- Hacker News 수집 ---
     hn_articles, hn_errors = hackernews.fetch(HN_KEYWORDS)
-    if hn_errors:
-        all_errors.extend(hn_errors)
-    else:
-        all_articles.extend(hn_articles)
+    all_errors.extend(hn_errors)
+    all_articles.extend(hn_articles)
 
-    # --- RSS Feeds 수집 ---
     rss_articles, rss_errors = rss_feeds.fetch()
     all_errors.extend(rss_errors)
     all_articles.extend(rss_articles)
 
-    # --- 키워드 및 중복 필터링 ---
+    # --- 키워드/중복(seen) 필터 ---
     filtered = []
     for article in all_articles:
         link = get_primary_link(article)
@@ -154,23 +155,22 @@ def main():
     # --- 유사 기사 병합 ---
     merged, dedup_errors = deduplicate_and_merge(filtered)
     all_errors.extend(dedup_errors)
-    
-    # [핵심 수정] 국내 VC/스타트업 RSS 기사들이 잘려나가지 않도록 수집 풀을 60개로 확대!
-    merged = merged[:60]
 
-    # --- 카테고리 분류 ---
-    classified_articles = []
+    # --- 분류 + relevance 점수 부여 ---
+    classified = []
     for article in merged:
         article, sum_errors = summarize(article)
-        if sum_errors:
-            all_errors.extend(sum_errors)
-        classified_articles.append(article)
+        all_errors.extend(sum_errors)
+        classified.append(article)
 
-    # --- 슬랙 1회 통합 발송 ---
-    if classified_articles:
-        success = send_aggregated_slack_news(classified_articles)
+    # relevance 상위만 선별 풀로 (좋은 기사가 잘려나가지 않게 먼저 정렬)
+    classified.sort(key=lambda a: a.get("relevance", 0), reverse=True)
+    classified = classified[:CANDIDATE_POOL]
+
+    if classified:
+        success = send_aggregated_slack_news(classified)
         if success:
-            for article in classified_articles:
+            for article in classified:
                 links = article.get("link", [])
                 if isinstance(links, list):
                     seen.update(links)
@@ -179,8 +179,14 @@ def main():
     else:
         print("전송할 새로운 기사가 없습니다.")
 
-    # --- 본 기사 목록 저장 ---
     save_seen(seen)
+
+    # --- 수집 오류 리포트(깃헙 액션 로그) ---
+    if all_errors:
+        print(f"\n⚠️ 수집 오류 {len(all_errors)}건:")
+        for e in all_errors:
+            print(f"  • {e}")
+
 
 if __name__ == "__main__":
     main()
