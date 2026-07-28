@@ -140,9 +140,11 @@ def send_aggregated_slack_news(articles) -> bool:
     message_text = "🗞️ *오늘의 주요 뉴스 브리핑*\n\n"
     has_news = False
 
-    for cat_name in CATEGORY_ORDER:
+  for cat_name in CATEGORY_ORDER:
         ranked = sorted(buckets[cat_name], key=lambda a: _selection_score(a, cat_name), reverse=True)
         selected, nvidia = [], 0
+        
+        # 1차 시도: LLM 점수 임계값 이상인 고품질 기사부터 픽
         for a in ranked:
             tl = a.get("title", "").lower()
             if "nvidia" in tl or "엔비디아" in tl:
@@ -150,13 +152,26 @@ def send_aggregated_slack_news(articles) -> bool:
                     continue
                 nvidia += 1
             if a.get("llm_score") is not None and a["llm_score"] < LLM_SEND_MIN_SCORE:
-                continue     # LLM 임계 미달 컷(threshold 방식)
+                continue     # 임계 미달 시 1차 픽에서는 패스
             selected.append(a)
             if len(selected) >= MAX_PER_CATEGORY:
                 break
 
+        # 🚨 [신규] 최소 3개(MIN_PER_CATEGORY_WARN) 구제 로직:
+        # 1차에서 임계값 때문에 기사가 1~2개밖에 안 뽑혔다면, 남은 기사 중 점수 높은 순으로 3개까지 강제 보충!
+        if len(selected) < MIN_PER_CATEGORY_WARN:
+            for a in ranked:
+                if a in selected:
+                    continue
+                tl = a.get("title", "").lower()
+                if ("nvidia" in tl or "엔비디아" in tl) and nvidia >= 2:
+                    continue
+                selected.append(a)
+                if len(selected) >= MIN_PER_CATEGORY_WARN:
+                    break
+
         if 0 < len(selected) < MIN_PER_CATEGORY_WARN:
-            print(f"⚠️ [경고] '{cat_name}' 기사 {len(selected)}개 — 최소 {MIN_PER_CATEGORY_WARN}개 미만.")
+            print(f"⚠️ [경고] '{cat_name}' 수집된 기사 총량 자체가 {len(selected)}개로 3개 미만입니다.")
 
         if selected:
             has_news = True
@@ -164,21 +179,14 @@ def send_aggregated_slack_news(articles) -> bool:
             for a in selected:
                 title = a.get("title", "제목 없음").strip()
                 url = get_primary_link(a) or "#"
-                source = get_primary_source(a) or "출처미상"
+                
+                # 🚀 [신규] 언론사 이름 깔끔하게 1번만 출력하도록 클리닝 함수 적용
+                raw_source = get_primary_source(a) or "출처미상"
+                source = clean_source_name(raw_source)
+                
                 date = fmt_date(a.get("date", ""))
-                # 양식: 기사제목 (언론사, YY.MM.DD)
                 message_text += f"• <{url}|{title}> ({source}, {date})\n"
             message_text += "\n"
-
-    if not has_news:
-        message_text += "오늘 조건에 맞는 새로운 뉴스가 없습니다."
-
-    resp = requests.post(slack_webhook_url, json={"text": message_text})
-    if resp.status_code == 200:
-        print("슬랙 메시지 통합 전송 성공!")
-        return True
-    print(f"슬랙 전송 실패: {resp.status_code}, {resp.text}")
-    return False
 
 
 def main():
