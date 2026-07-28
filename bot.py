@@ -77,6 +77,28 @@ def get_primary_source(article: dict) -> str:
         return src[0] if src else ""
     return src
 
+def clean_source_name(source: str) -> str:
+    """언론사 이름 중복 괄호 제거 및 깔끔 매핑 (국내는 한글, 해외는 영어)"""
+    mapping = {
+        "ImpactOn (임팩트온)": "임팩트온",
+        "ImpactOn": "임팩트온",
+        "Platum (플랫텀)": "플랫텀",
+        "VentureSquare (벤처스퀘어)": "벤처스퀘어",
+        "VentureSquare": "벤처스퀘어",
+        "한경 Geeks (벤처/VC)": "한경 Geeks",
+        "전자신문 (벤처/스타트업)": "전자신문",
+        "Trellis (구 GreenBiz)": "Trellis",
+        "The Batch (deeplearning.ai)": "The Batch",
+        "SemiAnalysis (칩/인프라)": "SemiAnalysis",
+        "Sifted (EU 스타트업)": "Sifted",
+    }
+    if source in mapping:
+        return mapping[source]
+        
+    # 매핑에 없는 경우 괄호와 괄호 안 내용만 깔끔하게 삭제 (예: "매일경제 (스타트업)" -> "매일경제")
+    cleaned = re.sub(r'\s*\(.*?\)', '', source).strip()
+    return cleaned if cleaned else source
+    
 
 def fmt_date(date_str: str) -> str:
     """YYYY-MM-DD → YY.MM.DD (없으면 오늘)."""
