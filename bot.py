@@ -2,7 +2,14 @@ import os
 import requests
 from datetime import datetime
 
-from fetchers import hackernews, rss_feeds, newsletters
+from fetchers import hackernews, rss_feeds
+# 뉴스레터 모듈이 없거나 에러가 나면 조용히 무시하고 넘어감
+try:
+    from fetchers import newsletters
+    HAS_NEWSLETTERS = True
+except ImportError:
+    HAS_NEWSLETTERS = False
+    print("ℹ️ 뉴스레터 모듈을 찾을 수 없어 수집 단계에서 제외합니다.")
 from processor.deduplicator import deduplicate_and_merge, is_same_news_issue
 from processor.summarizer import summarize, keyword_hit
 from processor.reranker import rerank_by_category, is_enabled as llm_enabled
@@ -152,7 +159,21 @@ def main():
     hn_articles, hn_errors = hackernews.fetch(HN_KEYWORDS)
     all_errors.extend(hn_errors)
     all_articles.extend(hn_articles)
-
+    
+# --- 🚀 [수정] 뉴스레터 수집 (없거나 실패 시 안전하게 스킵) ---
+    if HAS_NEWSLETTERS:
+        try:
+            print("📬 뉴스레터 수집 시도 중...")
+            nl_articles, nl_errors = newsletters.fetch()
+            all_errors.extend(nl_errors)
+            all_articles.extend(nl_articles)
+            print(f"📬 뉴스레터 {len(nl_articles)}건 수집 완료")
+        except Exception as e:
+            print(f"⚠️ 뉴스레터 수집 중 에러 발생 (스킵합니다): {e}")
+            all_errors.append(f"뉴스레터 수집 실패: {str(e)}")
+    else:
+        print("⏩ 뉴스레터 수집 기능이 비활성화되어 넘어갑니다.")
+        
     rss_articles, rss_errors = rss_feeds.fetch()
     all_errors.extend(rss_errors)
     all_articles.extend(rss_articles)
