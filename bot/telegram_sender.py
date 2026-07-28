@@ -2,27 +2,22 @@ import os
 import requests
 from datetime import datetime
 
-BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
-BASE_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
-
+SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL", "")
 
 def _post(text: str) -> bool:
+    if not SLACK_WEBHOOK_URL:
+        print("Error: SLACK_WEBHOOK_URL is not set.")
+        return False
     try:
         response = requests.post(
-            f"{BASE_URL}/sendMessage",
-            json={
-                "chat_id": CHAT_ID,
-                "text": text,
-                "parse_mode": "HTML",
-                "disable_web_page_preview": True,
-            },
+            SLACK_WEBHOOK_URL,
+            json={"text": text},
             timeout=10,
         )
         return response.status_code == 200
-    except Exception:
+    except Exception as e:
+        print(f"Slack post failed: {e}")
         return False
-
 
 def send_message(text: str) -> bool:
     success = _post(text)
@@ -31,16 +26,15 @@ def send_message(text: str) -> bool:
         success = _post(text)
     return success
 
-
 def format_article(article: dict) -> str:
     title = article.get("title", "No title")
     field = article.get("field", "General Tech")
     tags = ", ".join(article.get("tags", [])) or "N/A"
     date = article.get("date", "Unknown date")
     summary = article.get("summary", "Summary unavailable")
-
     sources = article.get("source", [])
     links = article.get("link", [])
+
     if isinstance(sources, str):
         sources = [sources]
     if isinstance(links, str):
@@ -49,18 +43,17 @@ def format_article(article: dict) -> str:
     source_parts = []
     for i, src in enumerate(sources):
         link = links[i] if i < len(links) else "#"
-        source_parts.append(f'<a href="{link}">{src}</a>')
+        source_parts.append(f"<{link}|{src}>")
     sources_text = " | ".join(source_parts)
 
     return (
-        f"📌 <b>{title}</b>\n\n"
-        f"🗂 <b>Field:</b> {field}\n"
-        f"🏷 <b>Tags:</b> {tags}\n"
-        f"📅 <b>Date:</b> {date}\n\n"
-        f"📝 <b>Summary:</b>\n{summary}\n\n"
-        f"🔗 <b>Sources:</b> {sources_text}"
+        f"📌 *{title}*\n\n"
+        f"🗂 *Field:* {field}\n"
+        f"🏷 *Tags:* {tags}\n"
+        f"📅 *Date:* {date}\n\n"
+        f"📝 *Summary:*\n{summary}\n\n"
+        f"🔗 *Sources:* {sources_text}"
     )
-
 
 def send_error_report(report: dict) -> None:
     date_str = datetime.utcnow().strftime("%Y-%m-%d")
@@ -72,14 +65,12 @@ def send_error_report(report: dict) -> None:
     sent = report.get("articles_sent", 0)
 
     failed_list = "\n".join([f"  • {s}" for s in failed]) if failed else "  None"
-
     text = (
-        f"🔧 <b>Daily Run Report — {date_str}</b>\n\n"
+        f"🔧 *Daily Run Report — {date_str}*\n\n"
         f"✅ Sources succeeded: {succeeded}/{total}\n"
         f"❌ Failed sources:\n{failed_list}\n\n"
         f"⚠️ Articles skipped (missing fields): {skipped}\n"
         f"⚠️ Summaries unavailable: {no_summary}\n"
         f"📨 Articles sent: {sent}"
     )
-
     send_message(text)
