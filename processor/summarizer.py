@@ -2,76 +2,50 @@ import os
 import time
 from google import genai
 
-from config import CATEGORIES
-
 _client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY", ""))
 
-
-def _detect_category(title: str, description: str) -> str:
-    text = (title + " " + description).lower()
-    for category, keywords in CATEGORIES.items():
-        if any(kw.lower() in text for kw in keywords):
-            return category
-    return "General Tech"
-
-
-def _call_gemini(prompt: str) -> str:
-    response = _client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=prompt,
-    )
-    time.sleep(7)
-    text = response.text.strip()
-    print(f"Gemini raw response: {text}", flush=True)
-    return text
-
-
 def summarize(article: dict) -> tuple:
+    """
+    기존 요약 대신 기사 제목과 본문을 읽고 4대 카테고리 중 하나로 분류합니다.
+    (bot.py와의 연결을 위해 함수명 summarize 유지)
+    """
     errors = []
-    title = article.get("title", "")
-    description = article.get("description", "")
+    title = article.get("title", "").strip()
+    description = article.get("description") or article.get("content") or ""
+    
+    prompt = f"""
+다음 뉴스 기사의 제목과 본문을 읽고, 아래 [카테고리 지침]에 따라 가장 적합한 카테고리 '이름만' 출력하세요. 다른 설명이나 요약문은 절대 포함하지 마세요.
 
-    prompt = (
-        "You are a tech news analyst. Given the article below, respond in EXACTLY this format with no extra text:\n"
-        "SUMMARY: <4-sentence summary covering: what it is, what problem it solves, how it works, why it matters>\n"
-        "TAGS: <3-5 comma-separated tags>\n\n"
-        f"Title: {title}\n"
-        f"Content: {description[:1000]}"
-    )
+[카테고리 지침]
+1. 🌱 임팩트: 소셜임팩트, ESG, 기후테크, 돌봄, 시니어, 에너지, 순환경제, 임팩트 투자, 친환경 규제 및 정책 관련 뉴스
+2. 🤖 AI: 생성형 AI, LLM, 머신러닝, 인공지능 기술 및 산업 관련 뉴스
+3. 💼 대체투자 (PE, VC, AC): 사모펀드, 벤처캐피탈, 액셀러레이터, 스타트업 투자, M&A 관련 뉴스
+4. 🌐 거시경제: 금리, 환율, 인플레이션, 미 연준(Fed), 국내외 경제 동향 관련 뉴스
 
-    summary = "Summary unavailable"
-    tags = []
+기사 제목: {title}
+기사 본문: {description[:500]}
 
+반드시 다음 4개 중 하나로만 정확히 출력하세요: [🌱 임팩트, 🤖 AI, 💼 대체투자 (PE, VC, AC), 🌐 거시경제]
+"""
+    category = "🌐 거시경제"  # 기본값 (분류 실패 시)
     try:
-        text = _call_gemini(prompt)
-        summary, tags = _parse_response(text)
-    except Exception as e1:
-        print(f"Gemini error (attempt 1): {str(e1)}", flush=True)
-        try:
-            time.sleep(20)
-            text = _call_gemini(prompt)
-            summary, tags = _parse_response(text)
-        except Exception as e2:
-            print(f"Gemini error (attempt 2): {str(e2)}", flush=True)
-            errors.append(f"Summarization failed for '{title}': {str(e2)}")
+        response = _client.models.generate_content(
+            model="gemini-1.5-flash",  # 1.5-flash 모델로 변경 완료
+            contents=prompt,
+        )
+        time.sleep(2)  # 연속 호출 시 API 보호를 위해 2초 대기
+        text = response.text.strip()
+        print(f"Gemini category response: {text}", flush=True)
+        
+        valid_categories = ["🌱 임팩트", "🤖 AI", "💼 대체투자 (PE, VC, AC)", "🌐 거시경제"]
+        for valid in valid_categories:
+            if valid in text:
+                category = valid
+                break
+    except Exception as e:
+        print(f"Gemini classification error: {str(e)}", flush=True)
+        errors.append(f"Classification failed for '{title}': {str(e)}")
 
-    article["summary"] = summary
-    article["tags"] = tags
-    article["field"] = _detect_category(title, description)
-
+    # 분류된 카테고리 저장
+    article["category"] = category
     return article, errors
-
-
-def _parse_response(text: str) -> tuple:
-    summary = "Summary unavailable"
-    tags = []
-
-    for line in text.split("\n"):
-        line = line.strip()
-        if line.startswith("SUMMARY:"):
-            summary = line.replace("SUMMARY:", "").strip()
-        elif line.startswith("TAGS:"):
-            raw_tags = line.replace("TAGS:", "").strip()
-            tags = [t.strip() for t in raw_tags.split(",") if t.strip()]
-
-    return summary, tags
