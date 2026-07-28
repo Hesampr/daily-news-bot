@@ -33,11 +33,15 @@ def save_seen(seen: set) -> None:
 
 def is_relevant(article: dict) -> bool:
     text = (article.get("title", "") + " " + article.get("description", "")).lower()
-    
-    # 1. 블랙리스트 단어는 기존처럼 포함만 되어도 바로 제외
     for kw in BLACKLIST_KEYWORDS:
         if kw.lower() in text:
             return False
+    for kw in INTEREST_KEYWORDS:
+        # 단어 앞뒤가 독립되어 있을 때만 합격 (예: 'ai'는 합격, 'airdoctor'는 불합격)
+        pattern = r'\b' + re.escape(kw.lower()) + r'\b'
+        if re.search(pattern, text):
+            return True
+    return False
             
     # 2. 관심 키워드는 단어 앞뒤에 경계(\b)가 있는 '독립된 단어'일 때만 통과
     for kw in INTEREST_KEYWORDS:
