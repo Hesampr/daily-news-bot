@@ -1,9 +1,9 @@
 import os
-
+import requests
+from datetime import datetime
 from fetchers import hackernews, rss_feeds
 from processor.deduplicator import deduplicate_and_merge
 from processor.summarizer import summarize
-from bot.telegram_sender import send_message, format_article, send_error_report
 from config import (
     INTEREST_KEYWORDS,
     BLACKLIST_KEYWORDS,
@@ -13,7 +13,12 @@ from config import (
 )
 
 SEEN_FILE = "seen_news.txt"
-
+CATEGORY_ORDER = [
+    "🌱 임팩트",
+    "🤖 AI",
+    "💼 대체투자 (PE, VC, AC)",
+    "🌐 거시경제"
+]
 
 def load_seen() -> set:
     if not os.path.exists(SEEN_FILE):
@@ -21,11 +26,9 @@ def load_seen() -> set:
     with open(SEEN_FILE, "r") as f:
         return set(line.strip() for line in f if line.strip())
 
-
 def save_seen(seen: set) -> None:
     with open(SEEN_FILE, "w") as f:
         f.write("\n".join(seen))
-
 
 def is_relevant(article: dict) -> bool:
     text = (article.get("title", "") + " " + article.get("description", "")).lower()
@@ -37,48 +40,79 @@ def is_relevant(article: dict) -> bool:
             return True
     return False
 
-
 def get_primary_link(article: dict) -> str:
     link = article.get("link", "")
     if isinstance(link, list):
         return link[0] if link else ""
     return link
 
+def send_aggregated_slack_news(articles) -> bool:
+    """수집·분류된 기사를 단 1개의 슬랙 메시지로 통합 전송합니다."""
+    slack_webhook_url = os.environ.get("SLACK_WEBHOOK_URL")
+    if not slack_webhook_url:
+        print("SLACK_WEBHOOK_URL 이 설정되지 않았습니다.")
+        return False
+
+    categorized_news = {cat: [] for cat in CATEGORY_ORDER}
+    today_str = datetime.now().strftime("%Y-%m-%d")
+
+    for article in articles:
+        title = article.get("title", "제목 없음").strip()
+        url = get_primary_link(article) or "#"
+        date = article.get("date") or today_str
+        category = article.get("category", "🌐 거시경제")
+
+        formatted_item = f"• <{url}|{title} ({date})>"
+
+        for cat_name in CATEGORY_ORDER:
+            if cat_name in category or category in cat_name:
+                if len(categorized_news[cat_name]) < 5:
+                    categorized_news[cat_name].append(formatted_item)
+                break
+
+    message_text = "🗞️ *오늘의 주요 뉴스 브리핑*\n\n"
+    has_news = False
+
+    for cat_name in CATEGORY_ORDER:
+        items = categorized_news[cat_name]
+        if items:
+            has_news = True
+            message_text += f"*{cat_name}*\n"
+            message_text += "\n".join(items) + "\n\n"
+
+    if not has_news:
+        message_text += "오늘 조건에 맞는 새로운 뉴스가 없습니다."
+
+    response = requests.post(slack_webhook_url, json={"text": message_text})
+    if response.status_code == 200:
+        print("슬랙 메시지 통합 전송 성공!")
+        return True
+    else:
+        print(f"슬랙 전송 실패: {response.status_code}, {response.text}")
+        return False
 
 def main():
     seen = load_seen()
     all_errors = []
-    failed_sources = []
-    succeeded_sources = []
     all_articles = []
 
-    # --- Hacker News ---
+    # --- Hacker News 수집 ---
     hn_articles, hn_errors = hackernews.fetch(HN_KEYWORDS)
     if hn_errors:
-        failed_sources.append("Hacker News")
         all_errors.extend(hn_errors)
     else:
-        succeeded_sources.append("Hacker News")
-    all_articles.extend(hn_articles)
+        all_articles.extend(hn_articles)
 
-    # --- RSS Feeds ---
+    # --- RSS Feeds 수집 ---
     rss_articles, rss_errors = rss_feeds.fetch()
-    rss_failed_names = {e.split(":")[0].strip() for e in rss_errors}
-    rss_succeeded_names = set(RSS_SOURCES.keys()) - rss_failed_names
-    failed_sources.extend(list(rss_failed_names))
-    succeeded_sources.extend(list(rss_succeeded_names))
     all_errors.extend(rss_errors)
     all_articles.extend(rss_articles)
 
-    total_sources = len(succeeded_sources) + len(failed_sources)
-
-    # --- Filter ---
-    skipped = 0
+    # --- 키워드 및 중복 필터링 ---
     filtered = []
     for article in all_articles:
         link = get_primary_link(article)
         if not link or not article.get("title"):
-            skipped += 1
             continue
         if link in seen:
             continue
@@ -86,45 +120,34 @@ def main():
             continue
         filtered.append(article)
 
-    # --- Deduplicate & Merge ---
+    # --- 유사 기사 병합 ---
     merged, dedup_errors = deduplicate_and_merge(filtered)
     all_errors.extend(dedup_errors)
     merged = merged[:MAX_ARTICLES_PER_RUN]
 
-    # --- Summarize & Send ---
-    no_summary = 0
-    articles_sent = 0
-
+    # --- AI 카테고리 분류 ---
+    classified_articles = []
     for article in merged:
         article, sum_errors = summarize(article)
         if sum_errors:
-            no_summary += 1
             all_errors.extend(sum_errors)
+        classified_articles.append(article)
 
-        message = format_article(article)
-        success = send_message(message)
-
+    # --- 슬랙 1회 통합 발송 ---
+    if classified_articles:
+        success = send_aggregated_slack_news(classified_articles)
         if success:
-            articles_sent += 1
-            links = article.get("link", [])
-            if isinstance(links, list):
-                seen.update(links)
-            else:
-                seen.add(links)
+            for article in classified_articles:
+                links = article.get("link", [])
+                if isinstance(links, list):
+                    seen.update(links)
+                else:
+                    seen.add(links)
+    else:
+        print("전송할 새로운 기사가 없습니다.")
 
-    # --- Save & Report ---
+    # --- 본 기사 목록 저장 ---
     save_seen(seen)
-
-    report = {
-        "total_sources": total_sources,
-        "succeeded_sources": len(succeeded_sources),
-        "failed_sources": failed_sources,
-        "skipped_articles": skipped,
-        "no_summary": no_summary,
-        "articles_sent": articles_sent,
-    }
-    # send_error_report(report)
-
 
 if __name__ == "__main__":
     main()
