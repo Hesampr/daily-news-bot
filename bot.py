@@ -140,7 +140,7 @@ def send_aggregated_slack_news(articles) -> bool:
     message_text = "🗞️ *오늘의 주요 뉴스 브리핑*\n\n"
     has_news = False
 
-  for cat_name in CATEGORY_ORDER:
+    for cat_name in CATEGORY_ORDER:
         ranked = sorted(buckets[cat_name], key=lambda a: _selection_score(a, cat_name), reverse=True)
         selected, nvidia = [], 0
         
