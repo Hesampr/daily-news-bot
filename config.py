@@ -56,7 +56,7 @@ INTEREST_KEYWORDS = sorted(set(IMPACT_KW + AI_KW + ALT_KW + MACRO_KW + INSIGHTS_
 HN_KEYWORDS = INTEREST_KEYWORDS
 
 # ---------------------------------------------------------------------------
-# 2. 카테고리 및 발송 설정 (🚀 SIMILARITY_THRESHOLD 추가 완료!)
+# 2. 카테고리 및 발송/점수 설정 (🚀 누락된 변수 완벽 보강!)
 # ---------------------------------------------------------------------------
 CATEGORIES = {
     "🌱 임팩트": IMPACT_KW,
@@ -69,11 +69,17 @@ CATEGORIES = {
 OVERSEAS_PREFERRED_DOMAINS = ["🌱 임팩트", "🤖 AI", "💼 대체투자", "👔 MBB·Big4 인사이트"]
 REGION_WEIGHT = {"global": 1.35, "korea": 1.0}
 MAX_PER_CATEGORY = 4
-LLM_SEND_MIN_SCORE = 0       # LLM 편집장이 자유롭게 판단하도록 0으로 설정
-SIMILARITY_THRESHOLD = 0.85  # 👈 이 변수가 없어서 에러가 났던 것입니다! (중복 기사 병합 기준)
+LLM_SEND_MIN_SCORE = 0       # LLM 편집장이 자율 판단하도록 0으로 설정
+
+# 🚨 [여기서 에러가 났던 것입니다!] 모듈들이 찾는 점수/중복 판단 가중치 변수
+SIMILARITY_THRESHOLD = 0.85  # deduplicator.py 용 (중복 기사 병합 기준)
+WATCHLIST_WEIGHT = 1.2       # summarizer.py 용 (주요 관심기업 가중치)
+SOFT_PENALTY_KEYWORDS = [    # summarizer.py 용 (단순 주가/특징주 기사 감점)
+    "특징주", "목표가", "상한가", "하한가", "종목추천", "리딩", "주가전망"
+]
 
 # ---------------------------------------------------------------------------
-# 3. 블랙리스트 (노이즈 철저 차단)
+# 3. 블랙리스트 (지자체·소상공인 노이즈 철저 차단!)
 # ---------------------------------------------------------------------------
 BLACKLIST_KEYWORDS = [
     "coupon", "promo code", "discount code", "% off", "best deals",
