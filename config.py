@@ -56,7 +56,7 @@ INTEREST_KEYWORDS = sorted(set(IMPACT_KW + AI_KW + ALT_KW + MACRO_KW + INSIGHTS_
 HN_KEYWORDS = INTEREST_KEYWORDS
 
 # ---------------------------------------------------------------------------
-# 2. 카테고리 및 발송 설정
+# 2. 카테고리 및 발송 설정 (🚀 SIMILARITY_THRESHOLD 추가 완료!)
 # ---------------------------------------------------------------------------
 CATEGORIES = {
     "🌱 임팩트": IMPACT_KW,
@@ -69,7 +69,8 @@ CATEGORIES = {
 OVERSEAS_PREFERRED_DOMAINS = ["🌱 임팩트", "🤖 AI", "💼 대체투자", "👔 MBB·Big4 인사이트"]
 REGION_WEIGHT = {"global": 1.35, "korea": 1.0}
 MAX_PER_CATEGORY = 4
-LLM_SEND_MIN_SCORE = 0  # LLM 편집장이 자유롭게 판단하도록 0으로 설정
+LLM_SEND_MIN_SCORE = 0       # LLM 편집장이 자유롭게 판단하도록 0으로 설정
+SIMILARITY_THRESHOLD = 0.85  # 👈 이 변수가 없어서 에러가 났던 것입니다! (중복 기사 병합 기준)
 
 # ---------------------------------------------------------------------------
 # 3. 블랙리스트 (노이즈 철저 차단)
@@ -112,7 +113,7 @@ RSS_FEEDS = ALL_FEEDS
 RSS_SOURCES = ALL_FEEDS
 
 # ---------------------------------------------------------------------------
-# 5. 구글 뉴스 (🚀 쓰레기 뉴스 제거 -> 한경/매경/로이터 등 1군 언론사 속보만 핀셋 수집!)
+# 5. 구글 뉴스 (🚀 한경/매경/로이터 등 1군 언론사 속보만 핀셋 수집!)
 # ---------------------------------------------------------------------------
 GOOGLE_NEWS_FEEDS = {
     "국내 벤처/스타트업": "https://news.google.com/rss/search?q=(%ED%88%AC%EC%9E%90%EC%9C%A0%EC%B9%98+%ED%8E%80%EB%94%A9+M%26A+OR+%EC%8B%9C%EB%A6%AC%EC%A6%88)+when:1d+(source:%ED%95%9C%EA%B5%AD%EA%B5%BF%EC%A0%9C+OR+source:%EB%A7%A4%EC%9D%BC%EA%B5%BF%EC%A0%9C+OR+source:%EC%A0%84%EC%9E%90%EC%8B%A0%EB%AC%B8)&hl=ko&gl=KR&ceid=KR:ko",
