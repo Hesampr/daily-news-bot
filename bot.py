@@ -1,4 +1,5 @@
 import os
+import re
 import requests
 from datetime import datetime
 from fetchers import hackernews, rss_feeds
@@ -32,12 +33,18 @@ def save_seen(seen: set) -> None:
 
 def is_relevant(article: dict) -> bool:
     text = (article.get("title", "") + " " + article.get("description", "")).lower()
+    
+    # 1. 블랙리스트 단어는 기존처럼 포함만 되어도 바로 제외
     for kw in BLACKLIST_KEYWORDS:
         if kw.lower() in text:
             return False
+            
+    # 2. 관심 키워드는 단어 앞뒤에 경계(\b)가 있는 '독립된 단어'일 때만 통과
     for kw in INTEREST_KEYWORDS:
-        if kw.lower() in text:
+        pattern = r'\b' + re.escape(kw.lower()) + r'\b'
+        if re.search(pattern, text):
             return True
+            
     return False
 
 def get_primary_link(article: dict) -> str:
