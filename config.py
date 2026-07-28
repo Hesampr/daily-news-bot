@@ -18,7 +18,7 @@ INTEREST_KEYWORDS = [
     "mergers and acquisitions", "m&a", "startup funding", "accelerator",
     "fundraising", "valuation", "vc fund", "pe fund", "buyout",
     "스타트업", "벤처캐피탈", "액셀러레이터", "모태펀드", "사모펀드",
-    "시리즈a", "시리즈b", "투자유치", "인수합병", "펀드결성", "밸류에이션",
+    "시드", "시리즈a", "시리즈b", "투자유치", "인수합병", "펀드결성", "밸류에이션",
     
     # 🌐 거시경제 (금리, 인플레이션, 미 연준, 한국은행, 경기 동향)
     "interest rate", "inflation", "federal reserve", "fed", "central bank",
