@@ -1,51 +1,45 @@
-import os
-import time
-from google import genai
-
-_client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY", ""))
+import re
+from config import CATEGORIES
 
 def summarize(article: dict) -> tuple:
     """
-    기존 요약 대신 기사 제목과 본문을 읽고 4대 카테고리 중 하나로 분류합니다.
-    (bot.py와의 연결을 위해 함수명 summarize 유지)
+    Gemini AI 대신 config.py의 CATEGORIES 키워드 매칭(점수제)으로 
+    기사를 4대 카테고리로 자동 분류합니다.
     """
     errors = []
-    title = article.get("title", "").strip()
+    title = article.get("title", "")
     description = article.get("description") or article.get("content") or ""
+    text = (title + " " + description).lower()
+
+    # 카테고리별 키워드 일치 개수 계산
+    category_scores = {
+        "🌱 임팩트": 0,
+        "🤖 AI": 0,
+        "💼 대체투자": 0,
+        "🌐 거시경제": 0
+    }
+
+    for cat_name, keywords in CATEGORIES.items():
+        if not cat_name or cat_name not in category_scores:
+            continue
+            
+        for kw in keywords:
+            if not kw:
+                continue
+            # 단어 경계(\b)를 사용해 정확히 일치하는 키워드 개수 카운트
+            pattern = r'\b' + re.escape(kw.lower()) + r'\b'
+            if re.search(pattern, text):
+                category_scores[cat_name] += 1
+
+    # 가장 매칭 점수가 높은 카테고리 선정
+    best_category = max(category_scores, key=category_scores.get)
     
-    prompt = f"""
-다음 뉴스 기사의 제목과 본문을 읽고, 아래 [카테고리 지침]에 따라 가장 적합한 카테고리 '이름만' 출력하세요. 다른 설명이나 요약문은 절대 포함하지 마세요.
+    # 일치하는 키워드가 단 하나도 없는 경우 기본값으로 '🌐 거시경제' 지정
+    if category_scores[best_category] == 0:
+        assigned_category = "🌐 거시경제"
+    else:
+        assigned_category = best_category
 
-[카테고리 지침]
-1. 🌱 임팩트: 소셜임팩트, ESG, 기후테크, 돌봄, 시니어, 에너지, 순환경제, 임팩트 투자, 친환경 규제 및 정책 관련 뉴스
-2. 🤖 AI: 생성형 AI, LLM, 머신러닝, 인공지능 기술 및 산업 관련 뉴스
-3. 💼 대체투자 (PE, VC, AC): 사모펀드, 벤처캐피탈, 액셀러레이터, 스타트업 투자, M&A 관련 뉴스
-4. 🌐 거시경제: 금리, 환율, 인플레이션, 미 연준(Fed), 국내외 경제 동향 관련 뉴스
-
-기사 제목: {title}
-기사 본문: {description[:500]}
-
-반드시 다음 4개 중 하나로만 정확히 출력하세요: [🌱 임팩트, 🤖 AI, 💼 대체투자 (PE, VC, AC), 🌐 거시경제]
-"""
-    category = "🌐 거시경제"  # 기본값 (분류 실패 시)
-    try:
-        response = _client.models.generate_content(
-            model="gemini-1.5-flash",  # 1.5-flash 모델로 변경 완료
-            contents=prompt,
-        )
-        time.sleep(2)  # 연속 호출 시 API 보호를 위해 2초 대기
-        text = response.text.strip()
-        print(f"Gemini category response: {text}", flush=True)
-        
-        valid_categories = ["🌱 임팩트", "🤖 AI", "💼 대체투자 (PE, VC, AC)", "🌐 거시경제"]
-        for valid in valid_categories:
-            if valid in text:
-                category = valid
-                break
-    except Exception as e:
-        print(f"Gemini classification error: {str(e)}", flush=True)
-        errors.append(f"Classification failed for '{title}': {str(e)}")
-
-    # 분류된 카테고리 저장
-    article["category"] = category
+    # 결과 저장
+    article["category"] = assigned_category
     return article, errors
