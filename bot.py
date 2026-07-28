@@ -186,9 +186,7 @@ def main():
     all_errors.extend(rss_errors)
     all_articles.extend(rss_articles)
 
-    nl_articles, nl_errors = newsletters.fetch()      # 지메일 미설정 시 빈 리스트
-    all_errors.extend(nl_errors)
-    all_articles.extend(nl_articles)
+    
 
     # 키워드/링크/이슈(날짜 넘는) 중복 필터
     filtered = []
