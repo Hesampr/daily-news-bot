@@ -71,7 +71,7 @@ def normalize_url(url: str) -> str:
         and key.lower() not in TRACKING_QUERY_KEYS
     ]
     return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), ""))
-        
+
 
 def is_same_news_issue(title_a: str, title_b: str, threshold: float = 0.65) -> bool:
     tokens_a = {w for w in re.sub(r'[^\w\s]', ' ', title_a.lower()).split() if len(w) >= 2}
@@ -123,6 +123,8 @@ def clean_source_name(source: str) -> str:
     if source in mapping:
         return mapping[source]
     cleaned = re.sub(r'\s*\(.*?\)', '', source).strip()
+    # 슬랙이 도메인/URL 형태 출처를 자동 링크(+미리보기)하지 않도록 스킴 제거
+    cleaned = re.sub(r'^https?://', '', cleaned).strip().strip('/')
     return cleaned if cleaned else source
 
 
@@ -153,7 +155,7 @@ def send_aggregated_slack_news(articles) -> bool:
     slack_webhook_url = os.environ.get("SLACK_WEBHOOK_URL")
     if not slack_webhook_url:
         print("SLACK_WEBHOOK_URL 이 설정되지 않았습니다.")
-        return False
+        return False, []
 
     buckets = {cat: [] for cat in CATEGORY_ORDER}
     for a in articles:
@@ -164,12 +166,13 @@ def send_aggregated_slack_news(articles) -> bool:
 
     message_text = "🗞️ *오늘의 주요 뉴스 브리핑*\n\n"
     has_news = False
+    sent_articles = []          # ✅ 실제 슬랙에 나간 기사만 수집(seen 처리용)
 
     for cat_name in CATEGORY_ORDER:
         max_limit = MAX_PER_CATEGORY_DICT.get(cat_name, MAX_PER_CATEGORY)
         ranked = sorted(buckets[cat_name], key=lambda a: _selection_score(a, cat_name), reverse=True)
         selected, nvidia = [], 0
-        
+
         for a in ranked:
             tl = a.get("title", "").lower()
             if "nvidia" in tl or "엔비디아" in tl:
@@ -195,6 +198,7 @@ def send_aggregated_slack_news(articles) -> bool:
 
         if selected:
             has_news = True
+            sent_articles.extend(selected)   # ✅ 발송분만 기록
             message_text += f"*{cat_name}*\n"
             for a in selected:
                 title = a.get("title", "제목 없음").strip()
@@ -208,12 +212,20 @@ def send_aggregated_slack_news(articles) -> bool:
     if not has_news:
         message_text += "오늘 조건에 맞는 새로운 뉴스가 없습니다."
 
-    resp = requests.post(slack_webhook_url, json={"text": message_text})
+    # ✅ 링크 미리보기(unfurl) 끄기: 카드/썸네일이 딸려 나오지 않게 함
+    resp = requests.post(
+        slack_webhook_url,
+        json={
+            "text": message_text,
+            "unfurl_links": False,
+            "unfurl_media": False,
+        },
+    )
     if resp.status_code == 200:
         print("슬랙 메시지 통합 전송 성공!")
-        return True
+        return True, sent_articles
     print(f"슬랙 전송 실패: {resp.status_code}, {resp.text}")
-    return False
+    return False, sent_articles
 
 
 def main():
@@ -224,7 +236,7 @@ def main():
     hn_articles, hn_errors = hackernews.fetch(HN_KEYWORDS)
     all_errors.extend(hn_errors)
     all_articles.extend(hn_articles)
-    
+
     if HAS_NEWSLETTERS:
         try:
             print("📬 뉴스레터 수집 시도 중...")
@@ -237,7 +249,7 @@ def main():
             all_errors.append(f"뉴스레터 수집 실패: {str(e)}")
     else:
         print("⏩ 뉴스레터 수집 기능이 비활성화되어 넘어갑니다.")
-        
+
     rss_articles, rss_errors = rss_feeds.fetch()
     all_errors.extend(rss_errors)
     all_articles.extend(rss_articles)
@@ -268,25 +280,21 @@ def main():
     classified.sort(key=lambda a: a.get("relevance", 0), reverse=True)
 
     print("\n===== CATEGORY DEBUG =====")
-
     for c in CATEGORY_ORDER:
-      items = [
-        x for x in classified
-        if x.get("category") == c
-    ]
-
-    print(f"\n{c}: {len(items)}개")
-
-    for item in items[:3]:
-        print("-", item.get("title"))
+        items = [x for x in classified if x.get("category") == c]
+        print(f"\n{c}: {len(items)}개")
+        for item in items[:3]:
+            print("-", item.get("title"))
 
     classified = rerank_by_category(classified, CATEGORY_ORDER)
     if llm_enabled():
         print("LLM 리랭크 적용됨 (Gemini)")
 
     if classified:
-        if send_aggregated_slack_news(classified):
-            for art in classified:
+        success, sent_articles = send_aggregated_slack_news(classified)
+        if success:
+            # ✅ 실제 발송된 기사만 seen 처리(미발송 기사가 유실되지 않게)
+            for art in sent_articles:
                 links = art.get("link", [])
                 article_links = links if isinstance(links, list) else [links]
                 seen_links.update(normalize_url(link) for link in article_links)
