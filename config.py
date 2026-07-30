@@ -51,7 +51,7 @@ MACRO_KW = [
     "treasury yield", "10-year treasury", "yield curve", "dot plot",
     "기준금리", "인플레이션", "물가상승", "경기침체", "연준", "한국은행",
     "지정학", "관세", "무역전쟁", "공급망", "제재", "유가", "환율",
-    "미중갈등", "중동", "우크라이나", "대만", "통화정책", "금리", "파월", "이창용", "거시경제"
+    "미중갈등", "중동", "우크라이나", "대만", "통화정책", "금리", "스콧베센트", "트럼", "거시경제"
 ]
 
 INSIGHTS_KW = [
@@ -111,107 +111,53 @@ BLACKLIST_KEYWORDS = [
 ]
 
 # ---------------------------------------------------------------------------
-# 4. RSS 피드 (🚀 404·접속불가 매체 제거 + 검증된 15개 글로벌 피드 & 국내 VC 매체)
+# 4. 중앙 통제식 RSS 피드 메타데이터 (Tier 및 Priority 완벽 적용)
+# - Primary (우선순위 5) : 무조건 최우선 검토되는 A급 핵심 출처
+# - Supplemental (우선순위 3~4) : 보조 출처 (LLM 후보군으로 주로 활용)
 # ---------------------------------------------------------------------------
-LEGACY_ALL_FEEDS = {
-    # [Table Verified] Venture Capital & Private Equity & Startups
-    "TechCrunch Venture": "https://techcrunch.com/category/venture/feed/",
-    "PE Hub": "https://www.pehub.com/feed/",
-    "Sifted": "https://sifted.eu/feed",
-    "Crunchbase News": "https://news.crunchbase.com/feed/",
-    
-    # [Table Verified] AI, Semiconductors, Cloud & Enterprise
-    "MIT Tech Review (AI)": "https://www.technologyreview.com/topic/artificial-intelligence/feed/",
-    "TechCrunch AI": "https://techcrunch.com/category/artificial-intelligence/feed/",
-    "VentureBeat AI": "https://venturebeat.com/category/ai/feed/",
-    "The Batch": "https://www.deeplearning.ai/the-batch/tag/issue/rss/",
-    "EE Times": "https://www.eetimes.com/feed/",
-    "Data Center Dynamics": "https://www.datacenterdynamics.com/en/rss/",
-    "InfoWorld Cloud": "https://www.infoworld.com/category/cloud-computing/index.rss",
-    "ZDNET Enterprise": "https://www.zdnet.com/topic/enterprise-software/rss.xml",
-    "SemiAnalysis": "https://www.semianalysis.com/feed",
-
-    # [Table Verified] Impact Investing, Climate Tech, ESG & Energy
-    "Impact Alpha": "https://impactalpha.com/feed/",
-    "ESG Today": "https://www.esgtoday.com/feed/",
-    "CleanTechnica": "https://cleantechnica.com/feed/",
-    "Energy Voice": "https://www.energyvoice.com/feed/",
-
-    # [Table Verified] Macroeconomics, Geopolitics & Consulting
-    "The Economist": "https://www.economist.com/finance-and-economics/rss.xml",
-    "Foreign Affairs": "https://www.foreignaffairs.com/rss.xml",
-    "BCG Insights": "https://www.bcg.com/rss",
-    "McKinsey Insights": "https://www.mckinsey.com/insights/rss",
-    "PwC strategy+business": "https://www.strategy-business.com/rss",
-
-    # [Korea Top] 국내 VC 및 임팩트 생태계 매체
-    "ImpactOn (임팩트온)": "https://www.impacton.net/rss/allArticle.xml",
-    "Platum (플랫텀)": "https://platum.kr/feed",
-    "VentureSquare (벤처스퀘어)": "https://www.venturesquare.net/feed",
-    "한경 Geeks": "https://rss.hankyung.com/feed/geeks.xml",
-    "전자신문 스타트업": "https://rss.etnews.com/Section902.xml",
-}
-# RSS is configured by editorial category and priority tier. The fetcher keeps
-# consuming ALL_FEEDS for backward compatibility, while its insertion order
-# ensures overseas primary sources are checked before domestic supplements.
-CATEGORY_RSS_SOURCES = {
-    "🌱 임팩트": {
-        "primary": {
-            "Impact Alpha": "https://impactalpha.com/feed/",
-            "NextBillion": "https://nextbillion.net/feed/",
-            "Stanford Social Innovation Review": "https://ssir.org/site/rss_2.0/",
-            "Pioneers Post": "https://www.pioneerspost.com/rss.xml",
-            "Carbon Brief": "https://www.carbonbrief.org/feed/",
-            "Responsible Investor": "https://www.responsible-investor.com/feed/",
-        },
-        "supplemental": {
-            "ImpactOn": "https://www.impacton.net/rss/allArticle.xml",
-        },
-    },
-    "🤖 AI": {
-        "primary": {
-            "TechCrunch AI": "https://techcrunch.com/category/artificial-intelligence/feed/",
-            "SemiAnalysis": "https://www.semianalysis.com/feed",
-            "MIT Tech Review (AI)": "https://www.technologyreview.com/topic/artificial-intelligence/feed/",
-        },
-        "supplemental": {},
-    },
-    "💼 대체투자": {
-        "primary": {
-            "PE Hub": "https://www.pehub.com/feed/",
-            "Crunchbase News": "https://news.crunchbase.com/feed/",
-            "Sifted": "https://sifted.eu/feed",
-            "TechCrunch Venture": "https://techcrunch.com/category/venture/feed/",
-        },
-        "supplemental": {},
-    },
-    "🌐 거시경제·정책·지정학": {
-        "primary": {
-            "The Economist": "https://www.economist.com/finance-and-economics/rss.xml",
-            "Foreign Affairs": "https://www.foreignaffairs.com/rss.xml",
-        },
-        "supplemental": {},
-    },
-    "👔 MBB·Big4 인사이트": {
-        "primary": {
-            "McKinsey Insights": "https://www.mckinsey.com/insights/rss",
-        },
-        "supplemental": {},
-    },
-}
-
 RSS_SOURCE_METADATA = {
-    source_name: {"category": category, "tier": tier}
-    for category, tiers in CATEGORY_RSS_SOURCES.items()
-    for tier, sources in tiers.items()
-    for source_name in sources
+    # 🌱 임팩트 (가장 중요 -> A급 매체 최대 포진)
+    "Impact Alpha": {"url": "https://impactalpha.com/feed/", "category": "🌱 임팩트", "tier": "primary", "priority": 5},
+    "NextBillion": {"url": "https://nextbillion.net/feed/", "category": "🌱 임팩트", "tier": "primary", "priority": 5},
+    "SSIR": {"url": "https://ssir.org/site/rss_2.0/", "category": "🌱 임팩트", "tier": "primary", "priority": 5},
+    "Pioneers Post": {"url": "https://www.pioneerspost.com/rss.xml", "category": "🌱 임팩트", "tier": "primary", "priority": 5},
+    "Carbon Brief": {"url": "https://www.carbonbrief.org/feed/", "category": "🌱 임팩트", "tier": "primary", "priority": 5},
+    "Responsible Investor": {"url": "https://www.responsible-investor.com/feed/", "category": "🌱 임팩트", "tier": "primary", "priority": 5},
+    "ImpactOn (임팩트온)": {"url": "https://www.impacton.net/rss/allArticle.xml", "category": "🌱 임팩트", "tier": "supplemental", "priority": 4},
+    "Canary Media": {"url": "https://www.canarymedia.com/rss", "category": "🌱 임팩트", "tier": "supplemental", "priority": 4},
+    "Climate Home News": {"url": "https://www.climatechangenews.com/feed/", "category": "🌱 임팩트", "tier": "supplemental", "priority": 4},
+
+    # 🤖 AI (투자/규제/인프라 관점)
+    "TechCrunch AI": {"url": "https://techcrunch.com/category/artificial-intelligence/feed/", "category": "🤖 AI", "tier": "primary", "priority": 5},
+    "MIT Tech Review (AI)": {"url": "https://www.technologyreview.com/topic/artificial-intelligence/feed/", "category": "🤖 AI", "tier": "primary", "priority": 5},
+    "SemiAnalysis": {"url": "https://www.semianalysis.com/feed", "category": "🤖 AI", "tier": "primary", "priority": 5},
+    "The Batch": {"url": "https://www.deeplearning.ai/the-batch/tag/issue/rss/", "category": "🤖 AI", "tier": "primary", "priority": 5},
+    "The Verge AI": {"url": "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml", "category": "🤖 AI", "tier": "supplemental", "priority": 3},
+    "Ars Technica": {"url": "https://feeds.arstechnica.com/arstechnica/index", "category": "🤖 AI", "tier": "supplemental", "priority": 3},
+
+    # 💼 대체투자 (딜소싱 및 펀드 운용)
+    "PitchBook News": {"url": "https://pitchbook.com/rss/news", "category": "💼 대체투자", "tier": "primary", "priority": 5},
+    "PE Hub": {"url": "https://www.pehub.com/feed/", "category": "💼 대체투자", "tier": "primary", "priority": 5},
+    "Crunchbase News": {"url": "https://news.crunchbase.com/feed/", "category": "💼 대체투자", "tier": "primary", "priority": 5},
+    "TechCrunch Venture": {"url": "https://techcrunch.com/category/venture/feed/", "category": "💼 대체투자", "tier": "primary", "priority": 5},
+    "VCJ": {"url": "https://venturecapitaljournal.com/feed/", "category": "💼 대체투자", "tier": "primary", "priority": 5},
+    "Sifted": {"url": "https://sifted.eu/feed", "category": "💼 대체투자", "tier": "supplemental", "priority": 4},
+    "VentureSquare (벤처스퀘어)": {"url": "https://www.venturesquare.net/feed", "category": "💼 대체투자", "tier": "supplemental", "priority": 3},
+    "Platum (플랫텀)": {"url": "https://platum.kr/feed", "category": "💼 대체투자", "tier": "supplemental", "priority": 3},
+    "한경 Geeks (벤처/VC)": {"url": "https://rss.hankyung.com/feed/geeks.xml", "category": "💼 대체투자", "tier": "supplemental", "priority": 3},
+
+    # 🌐 거시경제·정책·지정학
+    "The Economist": {"url": "https://www.economist.com/finance-and-economics/rss.xml", "category": "🌐 거시·정책·지정학", "tier": "primary", "priority": 5},
+    "Foreign Affairs": {"url": "https://www.foreignaffairs.com/rss.xml", "category": "🌐 거시·정책·지정학", "tier": "primary", "priority": 5},
+
+    # 👔 MBB·Big4 인사이트
+    "McKinsey Insights": {"url": "https://www.mckinsey.com/insights/rss", "category": "👔 MBB·Big4 인사이트", "tier": "primary", "priority": 5},
+    "BCG Insights": {"url": "https://www.bcg.com/rss", "category": "👔 MBB·Big4 인사이트", "tier": "primary", "priority": 5},
+    "PwC strategy+business": {"url": "https://www.strategy-business.com/rss", "category": "👔 MBB·Big4 인사이트", "tier": "primary", "priority": 5},
 }
-ALL_FEEDS = {
-    source_name: feed_url
-    for tiers in CATEGORY_RSS_SOURCES.values()
-    for sources in tiers.values()
-    for source_name, feed_url in sources.items()
-}
+
+# 🚀 위 단일 메타데이터에서 수집용 URL 리스트 자동 생성!
+ALL_FEEDS = {name: meta["url"] for name, meta in RSS_SOURCE_METADATA.items()}
 RSS_FEEDS = ALL_FEEDS
 RSS_SOURCES = ALL_FEEDS
 
@@ -250,4 +196,50 @@ GOOGLE_NEWS_FEEDS = {
     "미국 통화정책/금리": "https://news.google.com/rss/search?q=(FOMC+OR+%EC%97%B0%EC%A4%80+OR+%EA%B8%B0%EC%A4%80%EA%B8%88%EB%A6%AC+OR+%ED%8C%8C%EC%9B%94+OR+inflation+OR+treasury+yield)+when:3d&hl=ko&gl=KR&ceid=KR:ko",
     "글로벌 거시/지정학": "https://news.google.com/rss/search?q=(interest+rate+OR+recession+OR+tariff+OR+geopolitics+OR+federal+reserve)+when:3d&hl=en-US&gl=US&ceid=US:en",
     "MBB/Big4 인사이트": "https://news.google.com/rss/search?q=(McKinsey+OR+BCG+OR+Bain+OR+Deloitte)+(AI+OR+climate+OR+venture+OR+private+equity)+when:3d&hl=en-US&gl=US&ceid=US:en"
+}
+
+# ---------------------------------------------------------------------------
+# 6. 출처 기반 카테고리 강제 고정 (Override)
+# 전문 매체는 키워드 검사를 건너뛰고 100% 해당 카테고리로 꽂아버립니다.
+# ---------------------------------------------------------------------------
+SOURCE_CATEGORY_OVERRIDE = {
+    # 🌱 임팩트 (이름 베리에이션 및 추천 15개 매체 모두 포함)
+    "ImpactOn": "🌱 임팩트",
+    "ImpactOn (임팩트온)": "🌱 임팩트",
+    "임팩트온": "🌱 임팩트",
+    "Impact Alpha": "🌱 임팩트",
+    "NextBillion": "🌱 임팩트",
+    "Pioneers Post": "🌱 임팩트",
+    "SSIR": "🌱 임팩트",
+    "Stanford Social Innovation Review": "🌱 임팩트",
+    "Devex": "🌱 임팩트",
+    "ESG Today": "🌱 임팩트",
+    "Responsible Investor": "🌱 임팩트",
+    "Environmental Finance": "🌱 임팩트",
+    "Corporate Knights": "🌱 임팩트",
+    "Canary Media": "🌱 임팩트",
+    "Carbon Brief": "🌱 임팩트",
+    "Climate Home News": "🌱 임팩트",
+    "Inside Climate News": "🌱 임팩트",
+    "Bloomberg Green": "🌱 임팩트",
+    "CleanTechnica": "🌱 임팩트",
+    "Energy Voice": "🌱 임팩트",
+
+    # 👔 MBB·Big4 인사이트
+    "McKinsey Insights": "👔 MBB·Big4 인사이트",
+    "BCG Insights": "👔 MBB·Big4 인사이트",
+    "PwC strategy+business": "👔 MBB·Big4 인사이트",
+
+    # 🤖 AI
+    "The Batch": "🤖 AI",
+    "The Batch (deeplearning.ai)": "🤖 AI",
+    "SemiAnalysis": "🤖 AI",
+    "VentureBeat AI": "🤖 AI",
+    "MIT Tech Review (AI)": "🤖 AI",
+
+    # 💼 대체투자
+    "Crunchbase News": "💼 대체투자",
+    "TechCrunch Venture": "💼 대체투자",
+    "PE Hub": "💼 대체투자",
+    "Sifted": "💼 대체투자",
 }
