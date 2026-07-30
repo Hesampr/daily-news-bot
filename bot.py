@@ -44,7 +44,8 @@ def _load_lines(path) -> list:
 
 def _save_lines(path, items, cap=5000):
     with open(path, "w", encoding="utf-8") as f:
-        f.write("\n".join(list(items)[-cap:]))
+        # sorted()를 추가하여 항상 일정한 순서로 저장되게 만듭니다.
+        f.write("\n".join(sorted(list(items))[-cap:]))
         
 
 def is_same_news_issue(title_a: str, title_b: str, threshold: float = 0.65) -> bool:
