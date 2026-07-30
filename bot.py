@@ -123,8 +123,12 @@ def clean_source_name(source: str) -> str:
     if source in mapping:
         return mapping[source]
     cleaned = re.sub(r'\s*\(.*?\)', '', source).strip()
-    # 슬랙이 도메인/URL 형태 출처를 자동 링크(+미리보기)하지 않도록 스킴 제거
+    # 슬랙이 도메인/URL 형태 출처를 자동 링크하지 않도록 스킴 제거
     cleaned = re.sub(r'^https?://', '', cleaned).strip().strip('/')
+    # 공백 없는 도메인형(예: news.bbsi.co.kr, TODAY.com)은 슬랙이 자동 링크를 걺
+    #  → dot 뒤에 zero-width space(U+200B, 비가시) 삽입해 링크화 차단. 제목만 링크 유지.
+    if cleaned and " " not in cleaned and re.search(r'\.[a-zA-Z]{2,}', cleaned):
+        cleaned = cleaned.replace(".", ".\u200b")
     return cleaned if cleaned else source
 
 
