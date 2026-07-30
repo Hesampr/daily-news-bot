@@ -1,6 +1,7 @@
 import re
 import socket
 import feedparser
+import requests
 from datetime import datetime, timedelta
 
 # 구글뉴스/변환/뉴스레터 피드까지 한 번에 순회 (없으면 RSS_SOURCES로 폴백)
@@ -29,9 +30,19 @@ def fetch() -> tuple:
         if not url or url.startswith("<"):   # 주석 자리표시자(미설정) 스킵
             continue
         try:
-            feed = feedparser.parse(url)
-            if feed.bozo and not feed.entries:
-                raise Exception(f"parse fail: {feed.bozo_exception}")
+            headers = {
+             "User-Agent": "Mozilla/5.0 (compatible; daily-news-bot/1.0)"
+            }
+
+            response = requests.get(
+                  url,
+                  headers=headers,
+                  timeout=15
+            )
+            feed = feedparser.parse(response.content)
+            
+           if feed.bozo:
+              print(f"⚠️ RSS 파싱 경고 - {source_name}: {feed.bozo_exception}")
 
             for entry in feed.entries[:10]:
                 title = entry.get("title", "").strip()
@@ -42,7 +53,13 @@ def fetch() -> tuple:
                 published = entry.get("published_parsed") or entry.get("updated_parsed")
                 if published:
                     pub_date = datetime(*published[:6])
-                    if pub_date < yesterday:
+                   if pub_date < yesterday and source_name not in [
+                      "McKinsey Insights",
+                      "BCG Insights",
+                      "PwC strategy+business",
+                      "SSIR",
+                      "PitchBook News",
+                  ]:
                         continue
                     date_str = pub_date.strftime("%Y-%m-%d")
                 else:
@@ -60,6 +77,6 @@ def fetch() -> tuple:
                     "description": description,
                 })
         except Exception as e:
-            errors.append(f"{source_name}: {str(e)}")
+            errors.append(f"{source_name} ({url}): {str(e)}")
 
     return articles, errors
