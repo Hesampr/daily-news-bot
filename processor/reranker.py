@@ -1,5 +1,6 @@
 import os
 import re
+import time
 import json
 import requests
 from config import MAX_PER_CATEGORY_DICT, MAX_PER_CATEGORY
@@ -45,16 +46,29 @@ def _candidate_models():
     return chain
 
 
+_TRANSIENT_CODES = {429, 500, 502, 503, 504}   # 일시 오류: 같은 모델로 잠깐 뒤 재시도
+
 def _post_generate(model: str, api_key: str, instruction: str, timeout: int = 12) -> str:
     url = f"{_API_ROOT}/models/{model}:generateContent?key={api_key}"
     payload = {
         "contents": [{"parts": [{"text": instruction}]}],
         "generationConfig": {"responseMimeType": "application/json", "temperature": 0.0},
     }
-    resp = requests.post(url, json=payload, timeout=timeout)
-    resp.raise_for_status()
-    data = resp.json()
-    return data["candidates"][0]["content"]["parts"][0]["text"]
+    last = None
+    for attempt in range(3):                     # 최대 3회(0s→2s→4s)
+        resp = requests.post(url, json=payload, timeout=timeout)
+        if resp.status_code in _TRANSIENT_CODES:
+            last = resp
+            wait = 2 * (attempt + 1)
+            print(f"   ↻ {model} HTTP {resp.status_code}(일시) — {wait}s 후 재시도")
+            time.sleep(wait)
+            continue
+        resp.raise_for_status()
+        data = resp.json()
+        return data["candidates"][0]["content"]["parts"][0]["text"]
+    if last is not None:
+        last.raise_for_status()               # 3회 모두 일시오류 → 예외로(다음 모델/폴백)
+    raise RuntimeError("no response")
 
 
 def _discover_model(api_key: str, timeout: int = 8):
