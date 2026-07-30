@@ -2,6 +2,7 @@ import os
 import re
 import requests
 from datetime import datetime
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from fetchers import hackernews, rss_feeds
 try:
@@ -33,6 +34,7 @@ SEEN_FILE = "seen_news.txt"
 SEEN_TITLES_FILE = "seen_titles.txt"
 CATEGORY_ORDER = list(CATEGORIES.keys())
 MIN_PER_CATEGORY_WARN = 3
+TRACKING_QUERY_KEYS = {"fbclid", "gclid", "mc_cid", "mc_eid", "ref", "referrer"}
 
 
 def _load_lines(path) -> list:
@@ -43,9 +45,32 @@ def _load_lines(path) -> list:
 
 
 def _save_lines(path, items, cap=5000):
+    values = sorted(items) if isinstance(items, set) else list(items)
+    content = "\n".join(values[-cap:])
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as f:
+            if f.read() == content:
+                return
     with open(path, "w", encoding="utf-8") as f:
-        # sorted()를 추가하여 항상 일정한 순서로 저장되게 만듭니다.
-        f.write("\n".join(sorted(list(items))[-cap:]))
+        f.write(content)
+
+
+def normalize_url(url: str) -> str:
+    """Remove tracking parameters so one article has one persistent identity."""
+    try:
+        parts = urlsplit(url)
+    except (TypeError, ValueError):
+        return url
+    if not parts.scheme or not parts.netloc:
+        return url
+
+    query = [
+        (key, value)
+        for key, value in parse_qsl(parts.query, keep_blank_values=True)
+        if not key.lower().startswith("utm_")
+        and key.lower() not in TRACKING_QUERY_KEYS
+    ]
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), ""))
         
 
 def is_same_news_issue(title_a: str, title_b: str, threshold: float = 0.65) -> bool:
@@ -192,7 +217,7 @@ def send_aggregated_slack_news(articles) -> bool:
 
 
 def main():
-    seen_links = set(_load_lines(SEEN_FILE))
+    seen_links = {normalize_url(link) for link in _load_lines(SEEN_FILE)}
     seen_titles = _load_lines(SEEN_TITLES_FILE)
     all_errors, all_articles = [], []
 
@@ -220,10 +245,11 @@ def main():
     filtered = []
     for art in all_articles:
         link = get_primary_link(art)
+        normalized_link = normalize_url(link)
         title = art.get("title", "")
         if not link or not title:
             continue
-        if link in seen_links:
+        if normalized_link in seen_links:
             continue
         if any(is_same_news_issue(title, old) for old in seen_titles[-800:]):
             continue
@@ -249,7 +275,8 @@ def main():
         if send_aggregated_slack_news(classified):
             for art in classified:
                 links = art.get("link", [])
-                seen_links.update(links if isinstance(links, list) else [links])
+                article_links = links if isinstance(links, list) else [links]
+                seen_links.update(normalize_url(link) for link in article_links)
                 seen_titles.append(art.get("title", ""))
     else:
         print("전송할 새로운 기사가 없습니다.")
