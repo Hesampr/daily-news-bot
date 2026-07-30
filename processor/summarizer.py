@@ -41,7 +41,9 @@ def summarize(article: dict):
 
     # 🚀 [1단계] 출처(RSS 전문매체) 기반 카테고리 강제 지정 및 Priority 적용
     #    (0단계에서 이미 확정됐으면 건너뜀)
-    source_meta = RSS_SOURCE_METADATA.get(source_clean)
+    # ✅ site: 폴백 기사는 source 가 실제 언론사명이라 메타데이터 키와 불일치
+    #    → 원 피드명(feed)으로도 조회해 카테고리·priority 를 유지한다.
+    source_meta = RSS_SOURCE_METADATA.get(source_clean) or RSS_SOURCE_METADATA.get(feed_name)
     if source_meta:
         if not assigned_category:
             assigned_category = source_meta.get("category")
