@@ -113,7 +113,7 @@ BLACKLIST_KEYWORDS = [
 # ---------------------------------------------------------------------------
 # 4. RSS 피드 (🚀 404·접속불가 매체 제거 + 검증된 15개 글로벌 피드 & 국내 VC 매체)
 # ---------------------------------------------------------------------------
-ALL_FEEDS = {
+LEGACY_ALL_FEEDS = {
     # [Table Verified] Venture Capital & Private Equity & Startups
     "TechCrunch Venture": "https://techcrunch.com/category/venture/feed/",
     "PE Hub": "https://www.pehub.com/feed/",
@@ -151,12 +151,99 @@ ALL_FEEDS = {
     "한경 Geeks": "https://rss.hankyung.com/feed/geeks.xml",
     "전자신문 스타트업": "https://rss.etnews.com/Section902.xml",
 }
+# RSS is configured by editorial category and priority tier. The fetcher keeps
+# consuming ALL_FEEDS for backward compatibility, while its insertion order
+# ensures overseas primary sources are checked before domestic supplements.
+CATEGORY_RSS_SOURCES = {
+    "🌱 임팩트": {
+        "primary": {
+            "Impact Alpha": "https://impactalpha.com/feed/",
+            "NextBillion": "https://nextbillion.net/feed/",
+            "Stanford Social Innovation Review": "https://ssir.org/site/rss_2.0/",
+            "Pioneers Post": "https://www.pioneerspost.com/rss.xml",
+            "Carbon Brief": "https://www.carbonbrief.org/feed/",
+            "Responsible Investor": "https://www.responsible-investor.com/feed/",
+        },
+        "supplemental": {
+            "ImpactOn": "https://www.impacton.net/rss/allArticle.xml",
+        },
+    },
+    "🤖 AI": {
+        "primary": {
+            "TechCrunch AI": "https://techcrunch.com/category/artificial-intelligence/feed/",
+            "SemiAnalysis": "https://www.semianalysis.com/feed",
+            "MIT Tech Review (AI)": "https://www.technologyreview.com/topic/artificial-intelligence/feed/",
+        },
+        "supplemental": {},
+    },
+    "💼 대체투자": {
+        "primary": {
+            "PE Hub": "https://www.pehub.com/feed/",
+            "Crunchbase News": "https://news.crunchbase.com/feed/",
+            "Sifted": "https://sifted.eu/feed",
+            "TechCrunch Venture": "https://techcrunch.com/category/venture/feed/",
+        },
+        "supplemental": {},
+    },
+    "🌐 거시경제·정책·지정학": {
+        "primary": {
+            "The Economist": "https://www.economist.com/finance-and-economics/rss.xml",
+            "Foreign Affairs": "https://www.foreignaffairs.com/rss.xml",
+        },
+        "supplemental": {},
+    },
+    "👔 MBB·Big4 인사이트": {
+        "primary": {
+            "McKinsey Insights": "https://www.mckinsey.com/insights/rss",
+        },
+        "supplemental": {},
+    },
+}
+
+RSS_SOURCE_METADATA = {
+    source_name: {"category": category, "tier": tier}
+    for category, tiers in CATEGORY_RSS_SOURCES.items()
+    for tier, sources in tiers.items()
+    for source_name in sources
+}
+ALL_FEEDS = {
+    source_name: feed_url
+    for tiers in CATEGORY_RSS_SOURCES.values()
+    for sources in tiers.values()
+    for source_name, feed_url in sources.items()
+}
 RSS_FEEDS = ALL_FEEDS
 RSS_SOURCES = ALL_FEEDS
 
 # ---------------------------------------------------------------------------
 # 5. 구글 뉴스 (🚀 when:3d 유지 & 정교한 AND 검색식 적용)
 # ---------------------------------------------------------------------------
+# Keep optional ranking inputs explicit. An empty watchlist preserves the
+# current ranking behavior while allowing operators to add company or topic
+# names without relying on an import fallback in the processor.
+ALL_WATCHLISTS = []
+
+# Source names contain localized display text, so derive the Korean-source set
+# from stable feed domains rather than duplicating those display names here.
+_KOREA_SOURCE_DOMAINS = (
+    "impacton.net",
+    "platum.kr",
+    "venturesquare.net",
+    "hankyung.com",
+    "etnews.com",
+)
+KOREA_SOURCE_NAMES = frozenset(
+    source_name
+    for source_name, feed_url in ALL_FEEDS.items()
+    if any(domain in feed_url for domain in _KOREA_SOURCE_DOMAINS)
+)
+
+
+def source_region(source_name: str) -> str:
+    """Return the configured region for a known feed source."""
+    return "korea" if source_name in KOREA_SOURCE_NAMES else "global"
+
+
 GOOGLE_NEWS_FEEDS = {
     "국내 VC/스타트업": "https://news.google.com/rss/search?q=(%ED%88%AC%EC%9E%90%EC%9C%A0%EC%B9%98+OR+%ED%8E%80%EB%94%A9+OR+M%26A+OR+%EC%8B%9C%EB%A6%AC%EC%A6%88A+OR+%EC%8B%9C%EB%A6%AC%EC%A6%88B+OR+%EB%B2%A4%EC%B2%98%ED%8E%80%EB%93%9C)+when:3d&hl=ko&gl=KR&ceid=KR:ko",
     "글로벌 VC/PE": "https://news.google.com/rss/search?q=(venture+capital+OR+private+equity+OR+funding+round+OR+dry+powder+OR+startup+raising)+when:3d&hl=en-US&gl=US&ceid=US:en",
