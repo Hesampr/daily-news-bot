@@ -104,6 +104,7 @@ LLM_SEND_MIN_SCORE = 0
 SLACK_MAX_LENGTH = 3900     # 슬랙 자동분할(~4000자) 방지 상한
 SLACK_HEADER = ""           # 예: "📰 *ISQ Daily News | {date}*"  (빈 문자열이면 헤더 없음)
 MIN_CATEGORY_NEWS = 3       # 카테고리 최소 노출 목표(미달 시 규칙랭킹으로 보충)
+TRANSLATE_TITLES = True     # 발송 기사 제목 한글 번역(영문만, 실패 시 원문 유지)
 
 SIMILARITY_THRESHOLD = 0.85
 WATCHLIST_WEIGHT = 2.5       # 관심기업 존재감 극대화
