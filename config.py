@@ -106,7 +106,7 @@ SLACK_HEADER = ""           # 예: "📰 *ISQ Daily News | {date}*"  (빈 문자
 MIN_CATEGORY_NEWS = 3       # 카테고리 최소 노출 목표(미달 시 규칙랭킹으로 보충)
 TRANSLATE_TITLES = True     # 발송 기사 제목 한글 번역(영문만, 실패 시 원문 유지)
 
-SIMILARITY_THRESHOLD = 0.85
+SIMILARITY_THRESHOLD = 0.72
 WATCHLIST_WEIGHT = 2.5       # 관심기업 존재감 극대화
 SOFT_PENALTY_KEYWORDS = [
     "특징주", "목표가", "상한가", "하한가", "종목추천", "리딩", "주가전망"
@@ -115,6 +115,21 @@ SOFT_PENALTY_KEYWORDS = [
 # ---------------------------------------------------------------------------
 # 3. 블랙리스트 (지자체·소상공인·가십 철저 차단)
 # ---------------------------------------------------------------------------
+# ✅ 비-뉴스(채용공고·행사·수상·부고 등) 하드 차단 — is_relevant 에서 사용
+NON_NEWS_KEYWORDS = [
+    # 채용
+    "we're hiring", "we are hiring", "now hiring", "job opening", "job opportunity",
+    "apply now", "join our team", "career opportunity", "director of", "head of",
+    "vp of", "chief of", "is hiring", "vacancy", "recruit",
+    "채용", "공고", "모집", "구인", "리크루팅", "인재 영입",
+    # 행사/세미나/시상
+    "webinar", "join us", "register now", "rsvp", "save the date", "conference invite",
+    "세미나", "웨비나", "포럼 개최", "행사 안내", "참가 신청", "참가신청",
+    "컨퍼런스", "시상", "수상자 발표", "공모전", "설명회",
+    # 부고/인사
+    "obituary", "부고", "인사발령", "동정",
+]
+
 BLACKLIST_KEYWORDS = [
     "coupon", "promo code", "discount code", "% off", "best deals",
     "best price", "buy now", "airdoctor", "booking.com", "best laptop",
