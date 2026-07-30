@@ -29,11 +29,23 @@ try:
     from config import LLM_SEND_MIN_SCORE
 except ImportError:
     LLM_SEND_MIN_SCORE = 0
+# ✅ 운영 노브(P1-7): config 에서 조정 가능, 없으면 기본값
+try:
+    from config import SLACK_MAX_LENGTH
+except ImportError:
+    SLACK_MAX_LENGTH = 3900
+try:
+    from config import SLACK_HEADER          # 예: "📰 ISQ Daily News | {date}" / "" 이면 헤더 없음
+except ImportError:
+    SLACK_HEADER = ""
+try:
+    from config import MIN_CATEGORY_NEWS
+except ImportError:
+    MIN_CATEGORY_NEWS = 3
 
 SEEN_FILE = "seen_news.txt"
 SEEN_TITLES_FILE = "seen_titles.txt"
 CATEGORY_ORDER = list(CATEGORIES.keys())
-MIN_PER_CATEGORY_WARN = 3
 TRACKING_QUERY_KEYS = {"fbclid", "gclid", "mc_cid", "mc_eid", "ref", "referrer"}
 
 
@@ -168,9 +180,8 @@ def send_aggregated_slack_news(articles) -> bool:
             cat = CATEGORY_ORDER[-1]
         buckets[cat].append(a)
 
-    message_text = ""
-    has_news = False
     sent_articles = []          # ✅ 실제 슬랙에 나간 기사만 수집(seen 처리용)
+    category_lines = {}         # 카테고리별 라인(길이 가드용)
 
     for cat_name in CATEGORY_ORDER:
         max_limit = MAX_PER_CATEGORY_DICT.get(cat_name, MAX_PER_CATEGORY)
@@ -189,7 +200,7 @@ def send_aggregated_slack_news(articles) -> bool:
             if len(selected) >= max_limit:
                 break
 
-        if len(selected) < MIN_PER_CATEGORY_WARN and cat_name != "👔 MBB·Big4 인사이트":
+        if len(selected) < MIN_CATEGORY_NEWS and cat_name != "👔 MBB·Big4 인사이트":
             for a in ranked:
                 if a in selected:
                     continue
@@ -197,24 +208,57 @@ def send_aggregated_slack_news(articles) -> bool:
                 if ("nvidia" in tl or "엔비디아" in tl) and nvidia >= 2:
                     continue
                 selected.append(a)
-                if len(selected) >= MIN_PER_CATEGORY_WARN:
+                if len(selected) >= MIN_CATEGORY_NEWS:
                     break
 
+        # ✅ 카테고리 헤더는 항상 표시. 비면 안내 문구.
+        #    (P0-1) 문자열 매칭 대신 기사 객체를 함께 저장 → 트림 시 정확히 제거
+        lines = []
         if selected:
-            has_news = True
             sent_articles.extend(selected)   # ✅ 발송분만 기록
-            message_text += f"*{cat_name}*\n"
             for a in selected:
                 title = a.get("title", "제목 없음").strip()
                 url = get_primary_link(a) or "#"
                 raw_source = get_primary_source(a) or "출처미상"
                 source = clean_source_name(raw_source)
                 date = fmt_date(a.get("date", ""))
-                message_text += f"• <{url}|{title}> ({source}, {date})\n"
-            message_text += "\n"
+                lines.append({"text": f"• <{url}|{title}> ({source}, {date})", "article": a})
+        else:
+            lines.append({"text": "• 오늘 조건에 맞는 뉴스가 없습니다.", "article": None})
+        category_lines[cat_name] = lines
 
-    if not has_news:
-        message_text += "오늘 조건에 맞는 새로운 뉴스가 없습니다."
+    # ✅ 슬랙은 약 4,000자 초과 시 메시지를 분할함 → SLACK_MAX_LENGTH 안으로 가드.
+    #    초과 시 기사 많은 카테고리 끝에서부터 한 건씩 덜어냄(안내 문구는 유지).
+    def _build():
+        parts = []
+        if SLACK_HEADER:
+            parts.append(SLACK_HEADER.replace("{date}", datetime.now().strftime("%y.%m.%d")))
+            parts.append("")
+        for cat in CATEGORY_ORDER:
+            parts.append(f"*{cat}*")
+            parts.extend(item["text"] for item in category_lines.get(cat, []))
+            parts.append("")
+        return "\n".join(parts).rstrip() + "\n"
+
+    message_text = _build()
+    trimmed = 0
+    while len(message_text) > SLACK_MAX_LENGTH:
+        biggest = max(
+            (c for c in CATEGORY_ORDER
+             if len(category_lines.get(c, [])) > 1),
+            key=lambda c: len(category_lines[c]),
+            default=None,
+        )
+        if biggest is None:
+            break
+        dropped = category_lines[biggest].pop()
+        # ✅ (P0-1) 객체 동일성으로 seen 제외 → 미발송 기사가 내일 다시 후보가 됨
+        if dropped.get("article") is not None and dropped["article"] in sent_articles:
+            sent_articles.remove(dropped["article"])
+        trimmed += 1
+        message_text = _build()
+    if trimmed:
+        print(f"ℹ️ 길이 제한으로 {trimmed}건 생략(내일 재후보)")
 
     # ✅ 링크 미리보기(unfurl) 끄기: 카드/썸네일이 딸려 나오지 않게 함
     resp = requests.post(
@@ -265,7 +309,8 @@ def main():
         title = art.get("title", "")
         if not link or not title:
             continue
-        if normalized_link in seen_links:
+        gnews_raw = normalize_url(art.get("gnews_link") or "")
+        if normalized_link in seen_links or (gnews_raw and gnews_raw in seen_links):
             continue
         if any(is_same_news_issue(title, old) for old in seen_titles[-800:]):
             continue
@@ -302,6 +347,11 @@ def main():
                 links = art.get("link", [])
                 article_links = links if isinstance(links, list) else [links]
                 seen_links.update(normalize_url(link) for link in article_links)
+                # ✅ (P0-3) 디코딩 전 구글뉴스 원링크도 함께 저장
+                #    → 디코더 성공/실패가 날마다 달라도 중복 재발송 방지
+                gr = art.get("gnews_link")
+                if gr:
+                    seen_links.add(normalize_url(gr))
                 seen_titles.append(art.get("title", ""))
     else:
         print("전송할 새로운 기사가 없습니다.")
