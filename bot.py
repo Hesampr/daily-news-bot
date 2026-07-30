@@ -168,7 +168,7 @@ def send_aggregated_slack_news(articles) -> bool:
             cat = CATEGORY_ORDER[-1]
         buckets[cat].append(a)
 
-    message_text = "🗞️ *오늘의 주요 뉴스 브리핑*\n\n"
+    message_text = ""
     has_news = False
     sent_articles = []          # ✅ 실제 슬랙에 나간 기사만 수집(seen 처리용)
 
