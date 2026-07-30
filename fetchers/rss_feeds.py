@@ -31,18 +31,18 @@ def fetch() -> tuple:
             continue
         try:
             headers = {
-             "User-Agent": "Mozilla/5.0 (compatible; daily-news-bot/1.0)"
+                "User-Agent": "Mozilla/5.0 (compatible; daily-news-bot/1.0)"
             }
 
             response = requests.get(
-                  url,
-                  headers=headers,
-                  timeout=15
+                url,
+                headers=headers,
+                timeout=15
             )
             feed = feedparser.parse(response.content)
             
-           if feed.bozo:
-              print(f"⚠️ RSS 파싱 경고 - {source_name}: {feed.bozo_exception}")
+            if feed.bozo:
+                print(f"⚠️ RSS 파싱 경고 - {source_name}: {feed.bozo_exception}")
 
             for entry in feed.entries[:10]:
                 title = entry.get("title", "").strip()
@@ -53,13 +53,13 @@ def fetch() -> tuple:
                 published = entry.get("published_parsed") or entry.get("updated_parsed")
                 if published:
                     pub_date = datetime(*published[:6])
-                   if pub_date < yesterday and source_name not in [
-                      "McKinsey Insights",
-                      "BCG Insights",
-                      "PwC strategy+business",
-                      "SSIR",
-                      "PitchBook News",
-                  ]:
+                    if pub_date < yesterday and source_name not in [
+                        "McKinsey Insights",
+                        "BCG Insights",
+                        "PwC strategy+business",
+                        "SSIR",
+                        "PitchBook News",
+                    ]:
                         continue
                     date_str = pub_date.strftime("%Y-%m-%d")
                 else:
