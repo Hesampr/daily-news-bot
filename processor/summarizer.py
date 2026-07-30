@@ -4,7 +4,8 @@ from config import (
     SOFT_PENALTY_KEYWORDS,
     WATCHLIST_WEIGHT,
     ALL_WATCHLISTS,
-    RSS_SOURCE_METADATA  # 🚀 메타데이터 임포트
+    RSS_SOURCE_METADATA,      # 🚀 메타데이터 임포트
+    FEED_CATEGORY_OVERRIDE,   # ✅ Google News 피드 → 카테고리 강제 매핑
 )
 
 def keyword_hit(keyword: str, text: str) -> bool:
@@ -20,7 +21,7 @@ def summarize(article: dict):
     title = article.get("title", "")
     desc = article.get("description", "") or article.get("summary", "")
     text = (title + " " + desc).lower()
-    
+
     source = article.get("source", "")
     if isinstance(source, list):
         source = source[0] if source else ""
@@ -29,10 +30,21 @@ def summarize(article: dict):
     assigned_category = None
     base_score = 0.0
 
-    # 🚀 [1단계] 출처 기반 카테고리 강제 지정 및 Priority 적용
+    # 🚀 [0단계] Google News 피드 기반 카테고리 강제 확정 (최우선)
+    #    Google News 기사는 source 가 실제 언론사(Deloitte 등)라 RSS_SOURCE_METADATA 로는
+    #    안 잡히므로, 원 피드명(article['feed'])으로 카테고리를 먼저 고정한다.
+    feed_name = (article.get("feed") or "").strip()
+    feed_override = FEED_CATEGORY_OVERRIDE.get(feed_name)
+    if feed_override:
+        assigned_category = feed_override
+        base_score += 4.0   # 카테고리 규정 피드는 A급 준하는 우선순위 부여
+
+    # 🚀 [1단계] 출처(RSS 전문매체) 기반 카테고리 강제 지정 및 Priority 적용
+    #    (0단계에서 이미 확정됐으면 건너뜀)
     source_meta = RSS_SOURCE_METADATA.get(source_clean)
     if source_meta:
-        assigned_category = source_meta.get("category")
+        if not assigned_category:
+            assigned_category = source_meta.get("category")
         # 메타데이터에 정의된 강력한 우선순위(Priority 4~5점)를 기본 점수로 부여
         base_score += float(source_meta.get("priority", 0))
 
@@ -42,13 +54,13 @@ def summarize(article: dict):
         hits = sum(1 for kw in kws if keyword_hit(kw, text))
         category_scores[cat] = hits
 
-    # 메타데이터에 없는 종합 매체(구글 뉴스, 해커뉴스 등)는 키워드로 카테고리 결정
+    # 아직 카테고리 미정(구글뉴스 일반 쿼리, 해커뉴스 등)이면 키워드로 결정
     if not assigned_category:
         if sum(category_scores.values()) > 0:
             assigned_category = max(category_scores, key=category_scores.get)
         else:
-            assigned_category = list(CATEGORIES.keys())[-1] # Fallback
-    
+            assigned_category = list(CATEGORIES.keys())[-1]  # Fallback
+
     # 전문 매체 기사라도 우리 타겟 키워드가 많으면 추가 가점 (+보정)
     if assigned_category in category_scores:
         base_score += float(category_scores[assigned_category])
@@ -57,13 +69,13 @@ def summarize(article: dict):
     for w_kw in ALL_WATCHLISTS:
         if keyword_hit(w_kw, text):
             base_score += float(WATCHLIST_WEIGHT)
-            
+
     for p_kw in SOFT_PENALTY_KEYWORDS:
         if keyword_hit(p_kw, text):
             base_score -= 1.0
 
     # 최종 적용
     article["category"] = assigned_category
-    article["relevance"] = max(0.0, base_score) # 점수 마이너스 방지
-    
+    article["relevance"] = max(0.0, base_score)  # 점수 마이너스 방지
+
     return article, errors
