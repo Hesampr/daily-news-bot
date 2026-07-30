@@ -12,14 +12,100 @@ INVESTMENT_SIGNAL_KEYWORDS = [
     "투자유치", "투자", "인수", "합병", "펀딩", "상장", "출자", "규제", "정책",
 ]
 
+_API_ROOT = "https://generativelanguage.googleapis.com/v1beta"
+_DEAD_PREFIXES = ("gemini-1.0", "gemini-1.5", "gemini-2.0")
+# 이 키/프로젝트에서 살아있는 모델을 못 찾으면 순서대로 시도할 후보들
+_MODEL_CANDIDATES = [
+    "gemini-flash-latest",
+    "gemini-2.5-flash-lite",
+    "gemini-2.5-flash",
+    "gemini-flash-lite-latest",
+]
+_RESOLVED_MODEL = None   # 한 번 성공한 모델은 프로세스 내 캐시
+
+
 def is_enabled():
     return bool(os.environ.get("GEMINI_API_KEY"))
 
+
+def _candidate_models():
+    env = os.environ.get("GEMINI_MODEL", "").strip()
+    chain = []
+    if env and not env.startswith(_DEAD_PREFIXES):
+        chain.append(env)
+    for m in _MODEL_CANDIDATES:
+        if m not in chain:
+            chain.append(m)
+    return chain
+
+
+def _post_generate(model: str, api_key: str, instruction: str, timeout: int = 30) -> str:
+    url = f"{_API_ROOT}/models/{model}:generateContent?key={api_key}"
+    payload = {
+        "contents": [{"parts": [{"text": instruction}]}],
+        "generationConfig": {"responseMimeType": "application/json", "temperature": 0.0},
+    }
+    resp = requests.post(url, json=payload, timeout=timeout)
+    resp.raise_for_status()
+    data = resp.json()
+    return data["candidates"][0]["content"]["parts"][0]["text"]
+
+
+def _discover_model(api_key: str, timeout: int = 15):
+    """ListModels 로 실제 사용 가능한 flash 계열 generateContent 모델을 찾는다."""
+    url = f"{_API_ROOT}/models?key={api_key}&pageSize=100"
+    resp = requests.get(url, timeout=timeout)
+    resp.raise_for_status()
+    models = resp.json().get("models", [])
+    flashes = []
+    for m in models:
+        name = m.get("name", "").split("/")[-1]
+        methods = m.get("supportedGenerationMethods", [])
+        if "generateContent" in methods and "flash" in name and not name.startswith(_DEAD_PREFIXES):
+            flashes.append(name)
+    # lite(저비용) 우선, 그다음 이름 순
+    flashes.sort(key=lambda n: (0 if "lite" in n else 1, n))
+    return flashes[0] if flashes else None
+
+
+def _call_llm(instruction: str, api_key: str):
+    """후보 체인 → 실패 시 ListModels 자동탐색. 성공 시 (text, used_model), 실패 시 (None, None)."""
+    global _RESOLVED_MODEL
+    tried = []
+    order = ([_RESOLVED_MODEL] if _RESOLVED_MODEL else []) + _candidate_models()
+    for model in order:
+        if not model or model in tried:
+            continue
+        tried.append(model)
+        try:
+            text = _post_generate(model, api_key, instruction)
+            _RESOLVED_MODEL = model
+            return text, model
+        except requests.HTTPError as e:
+            code = getattr(e.response, "status_code", None)
+            if code == 404:
+                continue          # 이 모델 없음 → 다음 후보
+            print(f"⚠️ Gemini HTTP {code} ({model}) — 다음 후보로.")
+            continue
+        except Exception as e:
+            print(f"⚠️ Gemini 호출 예외 ({model}): {e} — 다음 후보로.")
+            continue
+
+    # 후보 전부 실패 → ListModels 자동탐색
+    try:
+        disc = _discover_model(api_key)
+        if disc and disc not in tried:
+            print(f"🔎 ListModels 로 사용 가능한 모델 탐색 → {disc}")
+            text = _post_generate(disc, api_key, instruction)
+            _RESOLVED_MODEL = disc
+            return text, disc
+    except Exception as e:
+        print(f"⚠️ ListModels 탐색 실패: {e}")
+    return None, None
+
+
 def select_top_news_with_llm(articles: list, category_order: list) -> list:
     api_key = os.environ.get("GEMINI_API_KEY")
-    model_name = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
-    if not model_name or model_name.strip() == "":
-        model_name = "gemini-flash-latest"
 
     buckets = {cat: [] for cat in category_order}
     for a in articles:
@@ -33,16 +119,13 @@ def select_top_news_with_llm(articles: list, category_order: list) -> list:
     prompt_text = "다음은 오늘 수집된 뉴스 기사 후보들이다. 심사역/VC 파트너 입장에서 꼭 읽어야 할 핵심 기사만 고르려고 한다.\n\n[후보 리스트]\n"
 
     for cat in category_order:
-        # 🚀 피드백 반영: 구글 뉴스 비율 증가에 맞춰 카테고리당 후보군을 10개로 확대
         ranked = sorted(buckets[cat], key=lambda x: float(x.get("relevance", 0)), reverse=True)[:10]
         for a in ranked:
             a["_temp_id"] = str(id_counter)
             candidates[str(id_counter)] = a
-
             title = a.get("title", "")
             source = a.get("source", "")
             desc = (a.get("summary", "") or a.get("description", ""))[:180]
-
             prompt_text += f"ID [{id_counter}] | 분야: {cat} | 언론사: {source}\n제목: {title}\n요약: {desc}\n---\n"
             id_counter += 1
 
@@ -54,8 +137,6 @@ def select_top_news_with_llm(articles: list, category_order: list) -> list:
         return _fallback_rule_based(buckets, category_order)
 
     limit_instructions = ", ".join([f"'{c}' 최대 {MAX_PER_CATEGORY_DICT.get(c, MAX_PER_CATEGORY)}개" for c in category_order])
-
-    # 🚀 피드백 반영: VC 투자자 관점의 구체적인 선택/제외 기준 프롬프트 추가
     instruction = (
         prompt_text +
         f"\n[지시사항]\n"
@@ -67,62 +148,47 @@ def select_top_news_with_llm(articles: list, category_order: list) -> list:
         f'응답 예시: {{"selected": ["1", "3", "8", "12"]}}'
     )
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
-    payload = {
-        "contents": [{"parts": [{"text": instruction}]}],
-        # 🚀 피드백 반영: 매일 일관된 핵심 선택을 위해 temperature 0.0 고정
-        "generationConfig": {"responseMimeType": "application/json", "temperature": 0.0}
-    }
+    print("🧠 제미나이 편집장이 핵심 뉴스를 선별 중입니다... (Top 10 후보군)")
+    raw_json, used_model = _call_llm(instruction, api_key)
+    if raw_json is None:
+        print("⚠️ 사용 가능한 Gemini 모델을 찾지 못해 규칙 기반 Fallback으로 전환합니다.")
+        return _fallback_rule_based(buckets, category_order)
 
     try:
-        print(f"🧠 제미나이 편집장({model_name})이 핵심 뉴스를 선별 중입니다... (Top 10 후보군, 1회 호출)")
-        # 🚀 피드백 반영: 깃허브 액션 환경의 타임아웃 방지를 위해 30초로 상향
-        resp = requests.post(url, json=payload, timeout=30)
-        resp.raise_for_status()
-
-        data = resp.json()
-        raw_json = data["candidates"][0]["content"]["parts"][0]["text"]
-
-        # ✅ 6번 버그 수정: Gemini가 숫자(1)/문자("1")/"ID 3"/"#3" 등 뭘 줘도 숫자만 뽑아 매칭
         raw_selected = json.loads(raw_json).get("selected", [])
+        # 숫자(1)/문자("1")/"ID 3"/"#1" 뭐가 와도 숫자만 추출
         selected_ids = []
         for x in raw_selected:
-            digits = re.sub(r"\D", "", str(x))   # "ID 3" -> "3", 3 -> "3"
+            digits = re.sub(r"\D", "", str(x))
             if digits:
                 selected_ids.append(digits)
 
-        # 범위밖/중복 id 제거하면서 순서 보존
-        final_articles = []
-        seen = set()
+        final_articles, seen = [], set()
         for sid in selected_ids:
             if sid in candidates and sid not in seen:
                 seen.add(sid)
                 final_articles.append(candidates[sid])
 
-        # ✅ 6번: 선택 결과가 비면(파싱 이상/전부 범위밖) 규칙 폴백으로
         if not final_articles:
             print("⚠️ 제미나이 선택 결과가 비어 있어 규칙 기반 Fallback으로 전환합니다.")
             return _fallback_rule_based(buckets, category_order)
 
-        print(f"✨ 제미나이 선별 완료: 후보 {len(candidates)}개 중 {len(final_articles)}개 선택됨!")
+        print(f"✨ 제미나이({used_model}) 선별 완료: 후보 {len(candidates)}개 중 {len(final_articles)}개 선택!")
         return final_articles
 
     except Exception as e:
-        print(f"⚠️ 제미나이 API 호출 실패 ({e}) -> 3단계 안전 Fallback 모드로 전환합니다!")
+        print(f"⚠️ 제미나이 응답 파싱 실패 ({e}) -> 규칙 기반 Fallback으로 전환합니다.")
         return _fallback_rule_based(buckets, category_order)
 
 
 def _fallback_rule_based(buckets: dict, category_order: list) -> list:
-    """
-    🚀 피드백 반영: LLM 실패 시 3단계 정렬 (1. Global 우선 -> 2. Relevance 높은 순 -> 3. Watchlist 여부)
-    """
+    """LLM 실패 시: 투자자 시그널 -> Global -> relevance 순."""
     fallback_list = []
     for cat in category_order:
         max_limit = MAX_PER_CATEGORY_DICT.get(cat, MAX_PER_CATEGORY)
 
         def fallback_sort_key(art):
             text = (art.get("title", "") + " " + art.get("description", "")).lower()
-            # ✅ #2 반영: '단순 점수'가 아니라 투자자 관점 '사건 시그널'을 최우선
             signal_score = sum(1 for kw in INVESTMENT_SIGNAL_KEYWORDS if kw in text)
             is_global = 1 if art.get("region", "global") == "global" else 0
             relevance_score = float(art.get("relevance", 0))
@@ -131,6 +197,7 @@ def _fallback_rule_based(buckets: dict, category_order: list) -> list:
         ranked = sorted(buckets[cat], key=fallback_sort_key, reverse=True)
         fallback_list.extend(ranked[:max_limit])
     return fallback_list
+
 
 def rerank_by_category(articles: list, category_order: list) -> list:
     return select_top_news_with_llm(articles, category_order)
