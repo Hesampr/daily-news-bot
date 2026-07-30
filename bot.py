@@ -36,6 +36,10 @@ try:
     from config import LLM_SEND_MIN_SCORE
 except ImportError:
     LLM_SEND_MIN_SCORE = 0
+try:
+    from config import NON_NEWS_KEYWORDS
+except ImportError:
+    NON_NEWS_KEYWORDS = []
 # ✅ 운영 노브(P1-7): config 에서 조정 가능, 없으면 기본값
 try:
     from config import SLACK_MAX_LENGTH
@@ -92,17 +96,42 @@ def normalize_url(url: str) -> str:
     return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), ""))
 
 
-def is_same_news_issue(title_a: str, title_b: str, threshold: float = 0.65) -> bool:
-    tokens_a = {w for w in re.sub(r'[^\w\s]', ' ', title_a.lower()).split() if len(w) >= 2}
-    tokens_b = {w for w in re.sub(r'[^\w\s]', ' ', title_b.lower()).split() if len(w) >= 2}
-    if not tokens_a or not tokens_b:
+def _char_ngrams(text: str, n: int = 3) -> set:
+    t = re.sub(r'[^\w가-힣]', '', text.lower())
+    if len(t) < n:
+        return {t} if t else set()
+    return {t[i:i + n] for i in range(len(t) - n + 1)}
+
+
+def _hangul_ratio(s: str) -> float:
+    letters = [c for c in s if c.isalpha()]
+    if not letters:
+        return 0.0
+    return sum(1 for c in letters if '가' <= c <= '힣') / len(letters)
+
+
+def is_same_news_issue(title_a: str, title_b: str) -> bool:
+    """같은 사건(다매체 중복) 판정. 한국어는 문자 3-gram(0.35), 영어는 단어 토큰(0.50).
+    영어 임계를 높게 둬 'Fed vs ECB' 류 과병합을 막고, 영어 의미중복은 임베딩 dedup이 보완."""
+    if _hangul_ratio(title_a) > 0.3 or _hangul_ratio(title_b) > 0.3:
+        sa, sb = _char_ngrams(title_a), _char_ngrams(title_b)
+        threshold = 0.35
+    else:
+        sa = {w for w in re.sub(r'[^\w\s]', ' ', title_a.lower()).split() if len(w) >= 3}
+        sb = {w for w in re.sub(r'[^\w\s]', ' ', title_b.lower()).split() if len(w) >= 3}
+        threshold = 0.50
+    if not sa or not sb:
         return False
-    return (len(tokens_a & tokens_b) / len(tokens_a | tokens_b)) >= threshold
+    return (len(sa & sb) / min(len(sa), len(sb))) >= threshold
 
 
 def is_relevant(article: dict) -> bool:
     text = (article.get("title", "") + " " + article.get("description", "")).lower()
     for kw in BLACKLIST_KEYWORDS:
+        if keyword_hit(kw, text):
+            return False
+    # ✅ 비-뉴스(채용공고·행사·부고 등) 하드 차단
+    for kw in NON_NEWS_KEYWORDS:
         if keyword_hit(kw, text):
             return False
     for kw in INTEREST_KEYWORDS:
@@ -310,6 +339,7 @@ def main():
     all_articles.extend(rss_articles)
 
     filtered = []
+    accepted_titles = []      # ✅ 런 내부 중복(경북펀드 등 다매체) 차단용
     for art in all_articles:
         link = get_primary_link(art)
         normalized_link = normalize_url(link)
@@ -319,11 +349,16 @@ def main():
         gnews_raw = normalize_url(art.get("gnews_link") or "")
         if normalized_link in seen_links or (gnews_raw and gnews_raw in seen_links):
             continue
+        # 날짜 넘는 중복(어제까지 발송)
         if any(is_same_news_issue(title, old) for old in seen_titles[-800:]):
+            continue
+        # ✅ 오늘 실행분 내 같은 이슈 중복 차단
+        if any(is_same_news_issue(title, t) for t in accepted_titles):
             continue
         if not is_relevant(art):
             continue
         filtered.append(art)
+        accepted_titles.append(title)
 
     merged, dedup_errors = deduplicate_and_merge(filtered)
     all_errors.extend(dedup_errors)
