@@ -267,6 +267,19 @@ def main():
         classified.append(art)
     classified.sort(key=lambda a: a.get("relevance", 0), reverse=True)
 
+    print("\n===== CATEGORY DEBUG =====")
+
+    for c in CATEGORY_ORDER:
+      items = [
+        x for x in classified
+        if x.get("category") == c
+    ]
+
+    print(f"\n{c}: {len(items)}개")
+
+    for item in items[:3]:
+        print("-", item.get("title"))
+
     classified = rerank_by_category(classified, CATEGORY_ORDER)
     if llm_enabled():
         print("LLM 리랭크 적용됨 (Gemini)")
