@@ -100,6 +100,11 @@ OVERSEAS_PREFERRED_DOMAINS = ["🌱 임팩트", "🤖 AI", "💼 대체투자", 
 REGION_WEIGHT = {"global": 1.35, "korea": 1.0}
 LLM_SEND_MIN_SCORE = 0
 
+# ── 운영 노브(팀 운영자가 조정하는 값) ──
+SLACK_MAX_LENGTH = 3900     # 슬랙 자동분할(~4000자) 방지 상한
+SLACK_HEADER = ""           # 예: "📰 *ISQ Daily News | {date}*"  (빈 문자열이면 헤더 없음)
+MIN_CATEGORY_NEWS = 3       # 카테고리 최소 노출 목표(미달 시 규칙랭킹으로 보충)
+
 SIMILARITY_THRESHOLD = 0.85
 WATCHLIST_WEIGHT = 2.5       # 관심기업 존재감 극대화
 SOFT_PENALTY_KEYWORDS = [
