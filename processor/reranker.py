@@ -5,21 +5,27 @@ import requests
 from config import MAX_PER_CATEGORY_DICT, MAX_PER_CATEGORY
 
 # LLM 장애 시 폴백 품질용: 투자자 관점의 '사건 발생' 시그널
-INVESTMENT_SIGNAL_KEYWORDS = [
-    "raise", "raised", "raises", "funding", "fund", "investment", "invest",
-    "acquisition", "acquire", "merger", "series", "seed", "ipo", "valuation",
-    "regulation", "policy", "launch", "deal", "stake", "buyout",
-    "투자유치", "투자", "인수", "합병", "펀딩", "상장", "출자", "규제", "정책",
-]
+# ✅ (P1-5) 시그널 가중치: '사건'은 높게, 범용어(investment/fund)는 낮게
+#    → "Investment outlook ..." 같은 전망 기사가 실제 딜 기사를 이기지 못하게 함
+INVESTMENT_SIGNAL_WEIGHTS = {
+    # 강한 사건 시그널
+    "raised": 5, "raises": 5, "acquisition": 5, "acquires": 5, "merger": 5,
+    "ipo": 5, "buyout": 5, "투자유치": 5, "인수": 5, "합병": 5, "상장": 5,
+    "regulation": 4, "규제": 4, "펀드결성": 4, "출자": 4,
+    "launch": 3, "launches": 3, "seed": 3, "series": 3, "펀딩": 3,
+    "valuation": 2, "deal": 2, "stake": 2, "정책": 2,
+    # 범용어(약한 시그널)
+    "funding": 1, "investment": 1, "fund": 1, "invest": 1, "투자": 1,
+}
 
 _API_ROOT = "https://generativelanguage.googleapis.com/v1beta"
 _DEAD_PREFIXES = ("gemini-1.0", "gemini-1.5", "gemini-2.0")
 # 이 키/프로젝트에서 살아있는 모델을 못 찾으면 순서대로 시도할 후보들
+# ✅ (P0-2) 운영봇에서 모델 탐색 체인이 길면 장애 시 지연 폭증 → 2개로 축소.
+#    flash-latest 는 이 키에서 검증된 별칭, lite 는 저비용 예비.
 _MODEL_CANDIDATES = [
     "gemini-flash-latest",
     "gemini-2.5-flash-lite",
-    "gemini-2.5-flash",
-    "gemini-flash-lite-latest",
 ]
 _RESOLVED_MODEL = None   # 한 번 성공한 모델은 프로세스 내 캐시
 
@@ -39,7 +45,7 @@ def _candidate_models():
     return chain
 
 
-def _post_generate(model: str, api_key: str, instruction: str, timeout: int = 30) -> str:
+def _post_generate(model: str, api_key: str, instruction: str, timeout: int = 12) -> str:
     url = f"{_API_ROOT}/models/{model}:generateContent?key={api_key}"
     payload = {
         "contents": [{"parts": [{"text": instruction}]}],
@@ -51,7 +57,7 @@ def _post_generate(model: str, api_key: str, instruction: str, timeout: int = 30
     return data["candidates"][0]["content"]["parts"][0]["text"]
 
 
-def _discover_model(api_key: str, timeout: int = 15):
+def _discover_model(api_key: str, timeout: int = 8):
     """ListModels 로 실제 사용 가능한 flash 계열 generateContent 모델을 찾는다."""
     url = f"{_API_ROOT}/models?key={api_key}&pageSize=100"
     resp = requests.get(url, timeout=timeout)
@@ -119,7 +125,8 @@ def select_top_news_with_llm(articles: list, category_order: list) -> list:
     prompt_text = "다음은 오늘 수집된 뉴스 기사 후보들이다. 심사역/VC 파트너 입장에서 꼭 읽어야 할 핵심 기사만 고르려고 한다.\n\n[후보 리스트]\n"
 
     for cat in category_order:
-        ranked = sorted(buckets[cat], key=lambda x: float(x.get("relevance", 0)), reverse=True)[:10]
+        # ✅ (P1-4) 카테고리당 12개: 너무 많으면 토큰 낭비 + 중요한 기사 희석
+        ranked = sorted(buckets[cat], key=lambda x: float(x.get("relevance", 0)), reverse=True)[:12]
         for a in ranked:
             a["_temp_id"] = str(id_counter)
             candidates[str(id_counter)] = a
@@ -140,11 +147,14 @@ def select_top_news_with_llm(articles: list, category_order: list) -> list:
     instruction = (
         prompt_text +
         f"\n[지시사항]\n"
-        f"1. 각 분야별로 가장 중요한 기사만 선택해라. ({limit_instructions})\n"
-        f"2. 투자자에게 새로운 정보가 있는 기사, 실제 투자·시장·정책 변화가 발생한 기사를 최우선으로 고른다.\n"
-        f"3. 단순 의견, 인터뷰, 행사·세미나 홍보, 지자체 지원사업, 주가 전망 리딩 기사는 철저히 제외한다.\n"
-        f"3-1. 동일 기업(예: Nvidia, OpenAI)에 관한 기사는 한 분야당 최대 2개까지만 선택한다.\n"
-        f"4. 설명이나 요약은 절대 쓰지 말고, 오직 선택한 기사의 ID 숫자들만 JSON 형식으로 반환해라.\n"
+        f"각 기사는 '내일 투자검토 회의(IC)에서 논의할 가치가 있는가'를 기준으로 판단한다.\n"
+        f"1. 각 분야별 최대 개수: {limit_instructions}\n"
+        f"2. 선정 우선순위:\n"
+        f"   Priority 1: 신규 투자/펀드결성, M&A, IPO, 규제·정책 변화, 시장 구조 변화, 핵심 제품 출시\n"
+        f"   Priority 2: 산업 경쟁구도 변화, 핵심 기업의 전략 변화, 기술 breakthrough\n"
+        f"3. 제외: 단순 기업 홍보, CEO 인터뷰, 행사·세미나 기사, 전망/의견 칼럼, 주가·종목 기사, 지자체 지원사업\n"
+        f"4. 동일 기업(예: Nvidia, OpenAI)에 관한 기사는 한 분야당 최대 2개까지만 선택한다.\n"
+        f"5. 설명이나 요약은 절대 쓰지 말고, 오직 선택한 기사의 ID 숫자들만 JSON 형식으로 반환해라.\n"
         f'응답 예시: {{"selected": ["1", "3", "8", "12"]}}'
     )
 
@@ -173,7 +183,26 @@ def select_top_news_with_llm(articles: list, category_order: list) -> list:
             print("⚠️ 제미나이 선택 결과가 비어 있어 규칙 기반 Fallback으로 전환합니다.")
             return _fallback_rule_based(buckets, category_order)
 
-        print(f"✨ 제미나이({used_model}) 선별 완료: 후보 {len(candidates)}개 중 {len(final_articles)}개 선택!")
+        # ✅ 카테고리 보장: 제미나이가 특정 분야를 통째로 건너뛰어도(예: 거시 0개)
+        #    해당 분야 후보 중 규칙 랭킹 상위로 max_limit 까지 보충한다.
+        #    (이게 없으면 선택 안 된 분야가 브리핑에서 통째로 사라짐)
+        chosen_ids = {id(a) for a in final_articles}
+        for cat in category_order:
+            max_limit = MAX_PER_CATEGORY_DICT.get(cat, MAX_PER_CATEGORY)
+            picked = [a for a in final_articles if a.get("category") == cat]
+            if len(picked) >= max_limit or not buckets[cat]:
+                continue
+            leftovers = [a for a in sorted(buckets[cat], key=_rule_sort_key, reverse=True)
+                         if id(a) not in chosen_ids]
+            need = max_limit - len(picked)
+            topped = leftovers[:need]
+            if topped:
+                print(f"➕ '{cat}' 부족분 {len(topped)}개를 규칙 랭킹으로 보충")
+            for a in topped:
+                chosen_ids.add(id(a))
+                final_articles.append(a)
+
+        print(f"✨ 제미나이({used_model}) 선별 완료: 후보 {len(candidates)}개 중 {len(final_articles)}개 확정(보충 포함)!")
         return final_articles
 
     except Exception as e:
@@ -181,20 +210,28 @@ def select_top_news_with_llm(articles: list, category_order: list) -> list:
         return _fallback_rule_based(buckets, category_order)
 
 
+def _rule_sort_key(art):
+    """투자자 시그널 -> Global -> relevance 순 정렬키 (폴백/보충 공용)."""
+    text = (art.get("title", "") + " " + art.get("description", "")).lower()
+    # ✅ 영문은 단어경계 매칭(fund→fundamental 오탐 방지), 한글은 부분문자열. 가중치 합산.
+    signal_score = 0
+    for kw, w in INVESTMENT_SIGNAL_WEIGHTS.items():
+        if re.search(r"[a-z]", kw):
+            if re.search(r"\b" + re.escape(kw) + r"\b", text):
+                signal_score += w
+        elif kw in text:
+            signal_score += w
+    is_global = 1 if art.get("region", "global") == "global" else 0
+    relevance_score = float(art.get("relevance", 0))
+    return (signal_score, is_global, relevance_score)
+
+
 def _fallback_rule_based(buckets: dict, category_order: list) -> list:
     """LLM 실패 시: 투자자 시그널 -> Global -> relevance 순."""
     fallback_list = []
     for cat in category_order:
         max_limit = MAX_PER_CATEGORY_DICT.get(cat, MAX_PER_CATEGORY)
-
-        def fallback_sort_key(art):
-            text = (art.get("title", "") + " " + art.get("description", "")).lower()
-            signal_score = sum(1 for kw in INVESTMENT_SIGNAL_KEYWORDS if kw in text)
-            is_global = 1 if art.get("region", "global") == "global" else 0
-            relevance_score = float(art.get("relevance", 0))
-            return (signal_score, is_global, relevance_score)
-
-        ranked = sorted(buckets[cat], key=fallback_sort_key, reverse=True)
+        ranked = sorted(buckets[cat], key=_rule_sort_key, reverse=True)
         fallback_list.extend(ranked[:max_limit])
     return fallback_list
 
