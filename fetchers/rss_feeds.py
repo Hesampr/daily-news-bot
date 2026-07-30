@@ -37,16 +37,25 @@ def clean_html(text):
     return text.strip()[:500]
 
 
-def split_google_news_title(raw_title: str, feed_name: str):
-    """Google News 제목 '진짜 제목 - 언론사' → (제목, 언론사) 분리.
-    분리 실패 시 (원제목, 피드명) 반환."""
-    if " - " in raw_title:
-        head, tail = raw_title.rsplit(" - ", 1)
-        outlet = tail.strip()
-        # 언론사명은 보통 짧다(과잉 분리 방지: 1~40자, 줄바꿈 없음)
-        if head.strip() and 1 <= len(outlet) <= 40 and "\n" not in outlet:
-            return head.strip(), outlet
-    return raw_title.strip(), feed_name
+def extract_gnews(entry, raw_title: str, feed_name: str):
+    """Google News: 실제 언론사명(entry.source.title) 우선 사용 + 제목 끝 '- 언론사' 제거.
+    실패 시 제목의 '- 언론사' 분리, 그것도 없으면 피드명 반환."""
+    outlet = ""
+    src = entry.get("source")
+    if isinstance(src, dict):
+        outlet = (src.get("title") or "").strip()
+
+    title = raw_title.strip()
+    # 제목이 '... - 언론사' 로 끝나면 접미어 제거
+    if outlet and title.endswith(" - " + outlet):
+        title = title[: -len(" - " + outlet)].strip()
+    elif " - " in title:
+        head, tail = title.rsplit(" - ", 1)
+        if head.strip() and 1 <= len(tail) <= 40 and "\n" not in tail:
+            title = head.strip()
+            outlet = outlet or tail.strip()
+
+    return title, (outlet or feed_name)
 
 
 def fetch() -> tuple:
@@ -110,7 +119,7 @@ def fetch() -> tuple:
                 # ✅ Google News: '제목 - 언론사' 분리해서 실제 언론사를 source 로.
                 #    일반 RSS: 제목 그대로, source 는 피드명.
                 if is_gnews:
-                    title, display_source = split_google_news_title(raw_title, source_name)
+                    title, display_source = extract_gnews(entry, raw_title, source_name)
                 else:
                     title = raw_title
                     display_source = source_name
