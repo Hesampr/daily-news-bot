@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import requests
 from config import MAX_PER_CATEGORY_DICT, MAX_PER_CATEGORY
@@ -8,9 +9,9 @@ def is_enabled():
 
 def select_top_news_with_llm(articles: list, category_order: list) -> list:
     api_key = os.environ.get("GEMINI_API_KEY")
-    model_name = os.environ.get("GEMINI_MODEL", "gemini-1.5-flash")
+    model_name = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
     if not model_name or model_name.strip() == "":
-        model_name = "gemini-1.5-flash"
+        model_name = "gemini-flash-latest"
 
     buckets = {cat: [] for cat in category_order}
     for a in articles:
@@ -29,11 +30,11 @@ def select_top_news_with_llm(articles: list, category_order: list) -> list:
         for a in ranked:
             a["_temp_id"] = str(id_counter)
             candidates[str(id_counter)] = a
-            
+
             title = a.get("title", "")
             source = a.get("source", "")
             desc = (a.get("summary", "") or a.get("description", ""))[:180]
-            
+
             prompt_text += f"ID [{id_counter}] | 분야: {cat} | 언론사: {source}\n제목: {title}\n요약: {desc}\n---\n"
             id_counter += 1
 
@@ -48,7 +49,7 @@ def select_top_news_with_llm(articles: list, category_order: list) -> list:
 
     # 🚀 피드백 반영: VC 투자자 관점의 구체적인 선택/제외 기준 프롬프트 추가
     instruction = (
-        prompt_text + 
+        prompt_text +
         f"\n[지시사항]\n"
         f"1. 각 분야별로 가장 중요한 기사만 선택해라. ({limit_instructions})\n"
         f"2. 투자자에게 새로운 정보가 있는 기사, 실제 투자·시장·정책 변화가 발생한 기사를 최우선으로 고른다.\n"
@@ -69,12 +70,31 @@ def select_top_news_with_llm(articles: list, category_order: list) -> list:
         # 🚀 피드백 반영: 깃허브 액션 환경의 타임아웃 방지를 위해 30초로 상향
         resp = requests.post(url, json=payload, timeout=30)
         resp.raise_for_status()
-        
+
         data = resp.json()
         raw_json = data["candidates"][0]["content"]["parts"][0]["text"]
-        selected_ids = json.loads(raw_json).get("selected", [])
-        
-        final_articles = [candidates[sid] for sid in selected_ids if sid in candidates]
+
+        # ✅ 6번 버그 수정: Gemini가 숫자(1)/문자("1")/"ID 3"/"#3" 등 뭘 줘도 숫자만 뽑아 매칭
+        raw_selected = json.loads(raw_json).get("selected", [])
+        selected_ids = []
+        for x in raw_selected:
+            digits = re.sub(r"\D", "", str(x))   # "ID 3" -> "3", 3 -> "3"
+            if digits:
+                selected_ids.append(digits)
+
+        # 범위밖/중복 id 제거하면서 순서 보존
+        final_articles = []
+        seen = set()
+        for sid in selected_ids:
+            if sid in candidates and sid not in seen:
+                seen.add(sid)
+                final_articles.append(candidates[sid])
+
+        # ✅ 6번: 선택 결과가 비면(파싱 이상/전부 범위밖) 규칙 폴백으로
+        if not final_articles:
+            print("⚠️ 제미나이 선택 결과가 비어 있어 규칙 기반 Fallback으로 전환합니다.")
+            return _fallback_rule_based(buckets, category_order)
+
         print(f"✨ 제미나이 선별 완료: 후보 {len(candidates)}개 중 {len(final_articles)}개 선택됨!")
         return final_articles
 
@@ -90,7 +110,7 @@ def _fallback_rule_based(buckets: dict, category_order: list) -> list:
     fallback_list = []
     for cat in category_order:
         max_limit = MAX_PER_CATEGORY_DICT.get(cat, MAX_PER_CATEGORY)
-        
+
         def fallback_sort_key(art):
             is_global = 1 if art.get("region", "global") == "global" else 0
             relevance_score = float(art.get("relevance", 0))
