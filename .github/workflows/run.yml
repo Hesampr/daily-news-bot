@@ -34,10 +34,10 @@ jobs:
       - name: Run bot
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          GMAIL_USER: ${{ secrets.GMAIL_USER }}                 # 선택: 뉴스레터 수집
-          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }} # 선택: 지메일 앱 비밀번호
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}       # 선택: LLM 리랭크
-          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}                # 선택: 기본 gemini-2.5-flash
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}                       # 선택: 뉴스레터 수집
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}       # 선택: 지메일 앱 비밀번호
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}               # 선택: LLM 리랭크
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}                      # 선택: 기본 gemini-2.5-flash
           PYTHONUNBUFFERED: "1"
         run: python -u bot.py
 
