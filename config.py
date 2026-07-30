@@ -2,11 +2,16 @@ import os
 
 # ---------------------------------------------------------------------------
 # 🤖 제미나이 모델명 빈칸 자동 방어 로직
+#    ✅ 2순위 반영: gemini-1.5-* 는 전부 셧다운(404). 별칭 'gemini-flash-latest'
+#       사용 → 구글이 최신 flash(현재 3.5)로 자동 라우팅, 재하드코딩 불필요.
 # ---------------------------------------------------------------------------
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL")
-if not GEMINI_MODEL or GEMINI_MODEL.strip() == "":
-    os.environ["GEMINI_MODEL"] = "gemini-2.0-flash"
-    GEMINI_MODEL = "gemini-2.0-flash"
+# 이미 종료된 모델(1.0/1.5/2.0 계열)은 env에 들어와 있어도 방어 → 살아있는 기본값으로 교체.
+# 2.5-flash 는 2026-10-16 종료 예정이므로 그 전 교체 필요(대안: gemini-flash-latest / 3.5).
+_DEAD_MODEL_PREFIXES = ("gemini-1.0", "gemini-1.5", "gemini-2.0")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "").strip()
+if not GEMINI_MODEL or GEMINI_MODEL.startswith(_DEAD_MODEL_PREFIXES):
+    GEMINI_MODEL = "gemini-2.5-flash"
+os.environ["GEMINI_MODEL"] = GEMINI_MODEL
 
 # ---------------------------------------------------------------------------
 # 1. 관심 키워드 (🚀 최신 AI 모델명, VC 펀딩 단계, 매크로 지표 완벽 확장!)
@@ -63,7 +68,13 @@ INSIGHTS_KW = [
 ]
 
 INTEREST_KEYWORDS = sorted(set(IMPACT_KW + AI_KW + ALT_KW + MACRO_KW + INSIGHTS_KW))
-HN_KEYWORDS = INTEREST_KEYWORDS
+
+# ✅ 2순위 반영: hackernews.py 는 keywords[:4] 만 사용하므로 INTEREST_KEYWORDS(정렬)를
+#    그대로 쓰면 알파벳 앞 4개(무의미)만 검색됨 → HN용 소수 핵심어를 따로 둔다.
+HN_KEYWORDS = [
+    "AI", "venture capital", "climate tech", "startup",
+    "OpenAI", "LLM", "energy transition", "semiconductor",
+]
 
 # ---------------------------------------------------------------------------
 # 2. 카테고리 및 발송/점수 설정
@@ -114,6 +125,9 @@ BLACKLIST_KEYWORDS = [
 # 4. 중앙 통제식 RSS 피드 메타데이터 (Tier 및 Priority 완벽 적용)
 # - Primary (우선순위 5) : 무조건 최우선 검토되는 A급 핵심 출처
 # - Supplemental (우선순위 3~4) : 보조 출처 (LLM 후보군으로 주로 활용)
+#   ✅ 3순위 반영: BCG Insights 제거 (https://www.bcg.com/rss 는 유효 피드가
+#      아니라 매 실행 404. BCG 콘텐츠는 아래 'MBB/Big4 인사이트' Google News
+#      쿼리가 커버함)
 # ---------------------------------------------------------------------------
 RSS_SOURCE_METADATA = {
     # 🌱 임팩트 (가장 중요 -> A급 매체 최대 포진)
@@ -131,12 +145,11 @@ RSS_SOURCE_METADATA = {
     "TechCrunch AI": {"url": "https://techcrunch.com/category/artificial-intelligence/feed/", "category": "🤖 AI", "tier": "primary", "priority": 5},
     "MIT Tech Review (AI)": {"url": "https://www.technologyreview.com/topic/artificial-intelligence/feed/", "category": "🤖 AI", "tier": "primary", "priority": 5},
     "SemiAnalysis": {"url": "https://www.semianalysis.com/feed", "category": "🤖 AI", "tier": "primary", "priority": 5},
-    "The Batch": {"url": "https://www.deeplearning.ai/the-batch/tag/issue/rss/", "category": "🤖 AI", "tier": "primary", "priority": 5},
+    "The Batch": {"url": "https://www.deeplearning.ai/the-batch/feed/", "category": "🤖 AI", "tier": "primary", "priority": 5},  # ✅ feed 경로로 교체(tag/issue 403)
     "The Verge AI": {"url": "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml", "category": "🤖 AI", "tier": "supplemental", "priority": 3},
     "Ars Technica": {"url": "https://feeds.arstechnica.com/arstechnica/index", "category": "🤖 AI", "tier": "supplemental", "priority": 3},
 
     # 💼 대체투자 (딜소싱 및 펀드 운용)
-    "PitchBook News": {"url": "https://pitchbook.com/rss/news", "category": "💼 대체투자", "tier": "primary", "priority": 5},
     "PE Hub": {"url": "https://www.pehub.com/feed/", "category": "💼 대체투자", "tier": "primary", "priority": 5},
     "Crunchbase News": {"url": "https://news.crunchbase.com/feed/", "category": "💼 대체투자", "tier": "primary", "priority": 5},
     "TechCrunch Venture": {"url": "https://techcrunch.com/category/venture/feed/", "category": "💼 대체투자", "tier": "primary", "priority": 5},
@@ -152,25 +165,52 @@ RSS_SOURCE_METADATA = {
 
     # 👔 MBB·Big4 인사이트
     "McKinsey Insights": {"url": "https://www.mckinsey.com/insights/rss", "category": "👔 MBB·Big4 인사이트", "tier": "primary", "priority": 5},
-    "BCG Insights": {"url": "https://www.bcg.com/rss", "category": "👔 MBB·Big4 인사이트", "tier": "primary", "priority": 5},
     "PwC strategy+business": {"url": "https://www.strategy-business.com/rss", "category": "👔 MBB·Big4 인사이트", "tier": "primary", "priority": 5},
 }
-
-# 🚀 위 단일 메타데이터에서 수집용 URL 리스트 자동 생성!
-ALL_FEEDS = {name: meta["url"] for name, meta in RSS_SOURCE_METADATA.items()}
-RSS_FEEDS = ALL_FEEDS
-RSS_SOURCES = ALL_FEEDS
 
 # ---------------------------------------------------------------------------
 # 5. 구글 뉴스 (🚀 when:3d 유지 & 정교한 AND 검색식 적용)
 # ---------------------------------------------------------------------------
-# Keep optional ranking inputs explicit. An empty watchlist preserves the
-# current ranking behavior while allowing operators to add company or topic
-# names without relying on an import fallback in the processor.
-ALL_WATCHLISTS = []
+# 랭킹 가점용 관심 인물/기관/기업 (WATCHLIST_WEIGHT=2.5 로 가점). 비우면 신호 사라짐.
+# 한국어 Google News 대비 한글명 병기.
+ALL_WATCHLISTS = [
+    "Trump", "트럼프", "Powell", "파월", "Federal Reserve", "연준", "FOMC",
+    "이창용", "한국은행", "ECB",
+    "OpenAI", "Anthropic", "NVIDIA", "엔비디아", "Google", "Microsoft",
+    "삼성전자", "SK하이닉스",
+]
 
+GOOGLE_NEWS_FEEDS = {
+    "국내 VC/스타트업": "https://news.google.com/rss/search?q=(%ED%88%AC%EC%9E%90%EC%9C%A0%EC%B9%98+OR+%ED%8E%80%EB%94%A9+OR+M%26A+OR+%EC%8B%9C%EB%A6%AC%EC%A6%88A+OR+%EC%8B%9C%EB%A6%AC%EC%A6%88B+OR+%EB%B2%A4%EC%B2%98%ED%8E%80%EB%93%9C)+when:3d&hl=ko&gl=KR&ceid=KR:ko",
+    "글로벌 VC/PE": "https://news.google.com/rss/search?q=(venture+capital+OR+private+equity+OR+funding+round+OR+dry+powder+OR+startup+raising)+when:3d&hl=en-US&gl=US&ceid=US:en",
+    "미국 통화정책/금리": "https://news.google.com/rss/search?q=(FOMC+OR+%EC%97%B0%EC%A4%80+OR+%EA%B8%B0%EC%A4%80%EA%B8%88%EB%A6%AC+OR+%ED%8C%8C%EC%9B%94+OR+inflation+OR+treasury+yield)+when:3d&hl=ko&gl=KR&ceid=KR:ko",
+    "글로벌 거시/지정학": "https://news.google.com/rss/search?q=(interest+rate+OR+recession+OR+tariff+OR+geopolitics+OR+federal+reserve)+when:3d&hl=en-US&gl=US&ceid=US:en",
+    "MBB/Big4 인사이트": "https://news.google.com/rss/search?q=(McKinsey+OR+BCG+OR+Bain+OR+Deloitte)+(AI+OR+climate+OR+venture+OR+private+equity)+when:3d&hl=en-US&gl=US&ceid=US:en"
+}
+
+# ---------------------------------------------------------------------------
+# 5-1. ✅ 1순위 반영: 수집용 피드 통합 (Google News 병합!)
+#      rss_feeds.fetch() 는 ALL_FEEDS 만 순회하므로, 여기서 병합해야
+#      FOMC·트럼프·국내외 VC·MBB/Big4 Google News 쿼리가 전부 수집된다.
+#      (반드시 GOOGLE_NEWS_FEEDS 정의 '이후'에 위치해야 함)
+# ---------------------------------------------------------------------------
+RSS_FEEDS = {
+    name: meta["url"]
+    for name, meta in RSS_SOURCE_METADATA.items()
+}
+
+ALL_FEEDS = {
+    **RSS_FEEDS,
+    **GOOGLE_NEWS_FEEDS
+}
+
+RSS_SOURCES = ALL_FEEDS
+
+# ---------------------------------------------------------------------------
+# 5-2. 지역 판별 (⚠️ ALL_FEEDS 정의 이후여야 하므로 이 위치 유지)
 # Source names contain localized display text, so derive the Korean-source set
 # from stable feed domains rather than duplicating those display names here.
+# ---------------------------------------------------------------------------
 _KOREA_SOURCE_DOMAINS = (
     "impacton.net",
     "platum.kr",
@@ -182,6 +222,7 @@ KOREA_SOURCE_NAMES = frozenset(
     source_name
     for source_name, feed_url in ALL_FEEDS.items()
     if any(domain in feed_url for domain in _KOREA_SOURCE_DOMAINS)
+    or "ceid=KR" in feed_url          # 한국어 Google News 쿼리도 국내 취급
 )
 
 
@@ -189,57 +230,10 @@ def source_region(source_name: str) -> str:
     """Return the configured region for a known feed source."""
     return "korea" if source_name in KOREA_SOURCE_NAMES else "global"
 
-
-GOOGLE_NEWS_FEEDS = {
-    "국내 VC/스타트업": "https://news.google.com/rss/search?q=(%ED%88%AC%EC%9E%90%EC%9C%A0%EC%B9%98+OR+%ED%8E%80%EB%94%A9+OR+M%26A+OR+%EC%8B%9C%EB%A6%AC%EC%A6%88A+OR+%EC%8B%9C%EB%A6%AC%EC%A6%88B+OR+%EB%B2%A4%EC%B2%98%ED%8E%80%EB%93%9C)+when:3d&hl=ko&gl=KR&ceid=KR:ko",
-    "글로벌 VC/PE": "https://news.google.com/rss/search?q=(venture+capital+OR+private+equity+OR+funding+round+OR+dry+powder+OR+startup+raising)+when:3d&hl=en-US&gl=US&ceid=US:en",
-    "미국 통화정책/금리": "https://news.google.com/rss/search?q=(FOMC+OR+%EC%97%B0%EC%A4%80+OR+%EA%B8%B0%EC%A4%80%EA%B8%88%EB%A6%AC+OR+%ED%8C%8C%EC%9B%94+OR+inflation+OR+treasury+yield)+when:3d&hl=ko&gl=KR&ceid=KR:ko",
-    "글로벌 거시/지정학": "https://news.google.com/rss/search?q=(interest+rate+OR+recession+OR+tariff+OR+geopolitics+OR+federal+reserve)+when:3d&hl=en-US&gl=US&ceid=US:en",
-    "MBB/Big4 인사이트": "https://news.google.com/rss/search?q=(McKinsey+OR+BCG+OR+Bain+OR+Deloitte)+(AI+OR+climate+OR+venture+OR+private+equity)+when:3d&hl=en-US&gl=US&ceid=US:en"
-}
-
 # ---------------------------------------------------------------------------
-# 6. 출처 기반 카테고리 강제 고정 (Override)
-# 전문 매체는 키워드 검사를 건너뛰고 100% 해당 카테고리로 꽂아버립니다.
+# (참고) 과거의 SOURCE_CATEGORY_OVERRIDE 는 summarizer 가 참조하지 않는 죽은 변수라 삭제함.
+#   현재 카테고리 배정은 RSS_SOURCE_METADATA['category'] 가 담당.
+#   ※ 단, Google News 5개 피드는 메타데이터에 category 가 없어 '키워드 분류'로 떨어짐.
+#     'MBB/Big4 인사이트' 구글뉴스가 👔 인사이트로 안 꽂히면, summarizer 에
+#     feed명→category 매핑을 추가해야 함(Step 4 대상).
 # ---------------------------------------------------------------------------
-SOURCE_CATEGORY_OVERRIDE = {
-    # 🌱 임팩트 (이름 베리에이션 및 추천 15개 매체 모두 포함)
-    "ImpactOn": "🌱 임팩트",
-    "ImpactOn (임팩트온)": "🌱 임팩트",
-    "임팩트온": "🌱 임팩트",
-    "Impact Alpha": "🌱 임팩트",
-    "NextBillion": "🌱 임팩트",
-    "Pioneers Post": "🌱 임팩트",
-    "SSIR": "🌱 임팩트",
-    "Stanford Social Innovation Review": "🌱 임팩트",
-    "Devex": "🌱 임팩트",
-    "ESG Today": "🌱 임팩트",
-    "Responsible Investor": "🌱 임팩트",
-    "Environmental Finance": "🌱 임팩트",
-    "Corporate Knights": "🌱 임팩트",
-    "Canary Media": "🌱 임팩트",
-    "Carbon Brief": "🌱 임팩트",
-    "Climate Home News": "🌱 임팩트",
-    "Inside Climate News": "🌱 임팩트",
-    "Bloomberg Green": "🌱 임팩트",
-    "CleanTechnica": "🌱 임팩트",
-    "Energy Voice": "🌱 임팩트",
-
-    # 👔 MBB·Big4 인사이트
-    "McKinsey Insights": "👔 MBB·Big4 인사이트",
-    "BCG Insights": "👔 MBB·Big4 인사이트",
-    "PwC strategy+business": "👔 MBB·Big4 인사이트",
-
-    # 🤖 AI
-    "The Batch": "🤖 AI",
-    "The Batch (deeplearning.ai)": "🤖 AI",
-    "SemiAnalysis": "🤖 AI",
-    "VentureBeat AI": "🤖 AI",
-    "MIT Tech Review (AI)": "🤖 AI",
-
-    # 💼 대체투자
-    "Crunchbase News": "💼 대체투자",
-    "TechCrunch Venture": "💼 대체투자",
-    "PE Hub": "💼 대체투자",
-    "Sifted": "💼 대체투자",
-}
