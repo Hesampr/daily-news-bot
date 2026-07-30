@@ -6,7 +6,7 @@
 """
 import os
 import re
-import json 
+import json
 
 try:
     from config import TRANSLATE_TITLES
