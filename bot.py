@@ -15,6 +15,11 @@ except ImportError:
 from processor.deduplicator import deduplicate_and_merge
 from processor.summarizer import summarize, keyword_hit
 from processor.reranker import rerank_by_category, is_enabled as llm_enabled
+try:
+    from processor.translator import translate_titles
+except ImportError:
+    def translate_titles(arts):
+        return arts
 from config import (
     INTEREST_KEYWORDS,
     BLACKLIST_KEYWORDS,
@@ -339,6 +344,9 @@ def main():
     if llm_enabled():
         print("LLM 리랭크 적용됨 (Gemini)")
 
+    # ✅ 발송 확정 후보만 제목 한글 번역(실패 시 원문 유지, 발송은 계속됨)
+    classified = translate_titles(classified)
+
     if classified:
         success, sent_articles = send_aggregated_slack_news(classified)
         if success:
@@ -352,7 +360,7 @@ def main():
                 gr = art.get("gnews_link")
                 if gr:
                     seen_links.add(normalize_url(gr))
-                seen_titles.append(art.get("title", ""))
+                seen_titles.append(art.get("title_orig") or art.get("title", ""))
     else:
         print("전송할 새로운 기사가 없습니다.")
 
