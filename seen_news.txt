@@ -1,12 +1,16 @@
+http://www.impacton.net/news/articleView.html?idxno=19764
+http://www.impacton.net/news/articleView.html?idxno=19768
 http://www.impacton.net/news/articleView.html?idxno=19769
 http://www.impacton.net/news/articleView.html?idxno=19770
 http://www.impacton.net/news/articleView.html?idxno=19771
 http://www.impacton.net/news/articleView.html?idxno=19773
 http://www.impacton.net/news/articleView.html?idxno=19774
 http://www.impacton.net/news/articleView.html?idxno=19775
+http://www.impacton.net/news/articleView.html?idxno=19776
 http://www.impacton.net/news/articleView.html?idxno=19780
 http://www.impacton.net/news/articleView.html?idxno=19782
 http://www.impacton.net/news/articleView.html?idxno=19783
+http://www.impacton.net/news/articleView.html?idxno=19784
 http://www.impacton.net/news/articleView.html?idxno=19786
 http://www.impacton.net/news/articleView.html?idxno=19788
 https://arstechnica.com/security/2026/07/anthropic-is-finding-bugs-faster-than-microsoft-can-fix-them/
@@ -14,6 +18,7 @@ https://arstechnica.com/tech-policy/2026/07/elon-musks-xai-is-trying-to-sue-its-
 https://juliahub.com/blog/frontier-models-physical-ai-evaluation
 https://news.crunchbase.com/sales-marketing/centralize-enterprise-sales-gtm-startup-funding-slack-meta-alums/
 https://news.google.com/rss/articles/CBMiVkFVX3lxTE9iVEJ1bkFtdEs4ZElEU1l2dEtMS3EtQUg3blhQU1NFRTU1dTRWMEFQTDBJVFdJNlJremE4dDU4c2x4WGd2bER6c2dNVmMyMElrWGtOeXFn?oc=5
+https://news.google.com/rss/articles/CBMiVkFVX3lxTFBBRkc0bmZ1dFUzdnZLanhHSnVqMXNiODhwYTVDdjdIXzhvMFpjdzBDRkgzaHctOFFiRl9HNGVZSjAzRmxhRzBBTUU3VVRQWnpiXzBQdXp3?oc=5
 https://news.google.com/rss/articles/CBMiW0FVX3lxTFBHY3BlSWpuTXRlX05GSXBhX0ExV3d6TFRMX1pHc29oLUVndFhxSFc5VXNKRHFaLTdTcFJvZEFIRVVXNlhET0NDUzZuZEZhdktzMlV3bUdtVlpfems?oc=5
 https://news.google.com/rss/articles/CBMiXkFVX3lxTE5QRjVTQmkyME14aEFUb1hRdV9STGJ0ZkNsTkdQUDkyT25tMXowNEpleTdFSnZ5V1hCaE5kM2FNNk84VE5QMzM5ZkhBSkNmTEwzaEZITExNZ3dtS1pEdnc?oc=5
 https://news.google.com/rss/articles/CBMiZkFVX3lxTE9zWmVDQkRzeDdIODNpZkY2T1dNS2g3RmlSRHZDR1NpbTBUb2VBaUN0c0tsTGpSM09ERVFPb19TTk5JUjl6VkIzODV5bF9nNzZjLU9teUhxVDNKRUJ1dkVGeGpxWDViQdIBZkFVX3lxTE9zWmVDQkRzeDdIODNpZkY2T1dNS2g3RmlSRHZDR1NpbTBUb2VBaUN0c0tsTGpSM09ERVFPb19TTk5JUjl6VkIzODV5bF9nNzZjLU9teUhxVDNKRUJ1dkVGeGpxWDViQQ?oc=5
@@ -63,6 +68,7 @@ https://www.mckinsey.com/capabilities/sustainability/our-insights/cbam-how-compa
 https://www.mckinsey.com/featured-insights/mckinsey-on-books/author-talks-why-founders-misunderstand-customer-demand
 https://www.mckinsey.com/mgi/our-research/the-global-balance-sheet-2026-imbalance-and-divergence
 https://www.pehub.com/aip-completes-take-private-buyout-of-medical-tech-firm-avanos-medical/
+https://www.pehub.com/blackstone-scoops-up-ultrasonic-inspections-company-darkvision-macquarie-to-shop-win-waste-sources-say/
 https://www.responsible-investor.com/esg-round-up-ghg-protocol-and-iso-to-issue-joint-standard/
 https://www.responsible-investor.com/japanese-pension-fund-giant-to-undertake-stewardship-assessments-cites-varying-quality-among-new-asset-managers/
 https://www.responsible-investor.com/spacex-flagged-as-severe-esg-risk-by-sustainalytics/
