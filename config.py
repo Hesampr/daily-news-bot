@@ -5,8 +5,8 @@ import os
 # ---------------------------------------------------------------------------
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL")
 if not GEMINI_MODEL or GEMINI_MODEL.strip() == "":
-    os.environ["GEMINI_MODEL"] = "gemini-1.5-flash"
-    GEMINI_MODEL = "gemini-1.5-flash"
+    os.environ["GEMINI_MODEL"] = "gemini-2.0-flash"
+    GEMINI_MODEL = "gemini-2.0-flash"
 
 # ---------------------------------------------------------------------------
 # 1. 관심 키워드 (🚀 최신 AI 모델명, VC 펀딩 단계, 매크로 지표 완벽 확장!)
