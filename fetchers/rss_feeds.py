@@ -3,6 +3,7 @@ import socket
 import feedparser
 import requests
 from datetime import datetime, timedelta
+from urllib.parse import urlsplit, quote
 
 try:
     from config import ALL_FEEDS as FEEDS
@@ -15,13 +16,29 @@ except ImportError:
     def source_region(_name):
         return "global"
 
-# ✅ Google News 리다이렉트 링크(news.google.com/rss/articles/CBMi..., 300자+)를
-#    원문 URL로 디코딩 → 슬랙 메시지 길이 급감(분할 방지) + 원문 직링크.
-#    미설치/실패 시 원 링크 유지(안전). requirements.txt 에 googlenewsdecoder 추가 필요.
+# ✅ Google News 리다이렉트 링크 → 원문 URL 디코딩(선택 의존성, 실패 시 원링크 유지)
 try:
     from googlenewsdecoder import gnewsdecoder
 except ImportError:
     gnewsdecoder = None
+
+feedparser.USER_AGENT = "daily-news-bot/1.0"
+socket.setdefaulttimeout(15)
+
+_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/126.0 Safari/537.36"
+    ),
+    "Accept": "application/rss+xml, application/xml, text/xml, */*",
+}
+
+# 인사이트/리포트 계열은 발행 주기가 길어 1일 recency 예외
+EVERGREEN_SOURCES = [
+    "McKinsey Insights", "BCG Insights", "PwC strategy+business", "SSIR",
+    "PitchBook News", "Impact Alpha", "Climate Home News", "The Batch",
+]
 
 _GN_URL_CACHE = {}
 
@@ -42,37 +59,23 @@ def resolve_gnews_url(url: str) -> str:
     return out
 
 
-feedparser.USER_AGENT = (
-    "daily-news-bot/1.0 "
-    "(+https://github.com/moong1755-ops/daily-news-bot)"
-)
-
-socket.setdefaulttimeout(15)
-
-
 def clean_html(text):
     if not text:
         return ""
-
     text = re.sub(r"<[^>]+>", "", text)
-    text = text.replace("&nbsp;", " ")
-    text = text.replace("&amp;", "&")
-    text = text.replace("&quot;", '"')
-    text = text.replace("&#39;", "'")
-
+    for a, b in (("&nbsp;", " "), ("&amp;", "&"), ("&quot;", '"'), ("&#39;", "'")):
+        text = text.replace(a, b)
     return text.strip()[:500]
 
 
 def extract_gnews(entry, raw_title: str, feed_name: str):
-    """Google News: 실제 언론사명(entry.source.title) 우선 사용 + 제목 끝 '- 언론사' 제거.
-    실패 시 제목의 '- 언론사' 분리, 그것도 없으면 피드명 반환."""
+    """Google News: 실제 언론사명(entry.source.title) 우선 + 제목 끝 '- 언론사' 제거."""
     outlet = ""
     src = entry.get("source")
     if isinstance(src, dict):
         outlet = (src.get("title") or "").strip()
 
     title = raw_title.strip()
-    # 제목이 '... - 언론사' 로 끝나면 접미어 제거
     if outlet and title.endswith(" - " + outlet):
         title = title[: -len(" - " + outlet)].strip()
     elif " - " in title:
@@ -80,164 +83,103 @@ def extract_gnews(entry, raw_title: str, feed_name: str):
         if head.strip() and 1 <= len(tail) <= 40 and "\n" not in tail:
             title = head.strip()
             outlet = outlet or tail.strip()
-
     return title, (outlet or feed_name)
+
+
+def _get_feed(url: str):
+    """요청 + 파싱. bozo+기사0 이면 불법 XML 문자 정화 후 1회 재시도. 실패 시 예외."""
+    resp = requests.get(url, headers=_HEADERS, timeout=15)
+    feed = feedparser.parse(resp.content)
+    if feed.bozo and not feed.entries:
+        cleaned = resp.content.decode("utf-8", errors="ignore")
+        cleaned = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", cleaned)
+        feed = feedparser.parse(cleaned)
+    if feed.bozo and not feed.entries:
+        raise ValueError(f"parse fail: {feed.bozo_exception}")
+    if feed.bozo:
+        print(f"⚠️ RSS 파싱 경고(일부 수집): {feed.bozo_exception}")
+    return feed
+
+
+def _gnews_site_fallback_url(original_url: str, source_name: str) -> str:
+    """✅ 3단계 안전망: 원본 RSS 사망 시 해당 '도메인 한정' 구글뉴스 검색으로 우회.
+    (매체명 검색은 '그 매체에 관한 기사'가 섞이므로 site: 을 사용)"""
+    domain = urlsplit(original_url).netloc.replace("www.", "")
+    if source_region(source_name) == "korea":
+        lang = "hl=ko&gl=KR&ceid=KR:ko"
+    else:
+        lang = "hl=en-US&gl=US&ceid=US:en"
+    q = quote(f"site:{domain} when:2d")
+    return f"https://news.google.com/rss/search?q={q}&{lang}"
 
 
 def fetch() -> tuple:
     articles = []
     errors = []
-
     yesterday = datetime.utcnow() - timedelta(days=1)
 
     for source_name, url in FEEDS.items():
-
         if not url or url.startswith("<"):
             continue
 
-        is_gnews = "news.google.com" in url    # ✅ Google News 피드 여부
+        is_gnews = "news.google.com" in url
+        via_fallback = False
 
         try:
+            feed = _get_feed(url)
+        except Exception as first_err:
+            if is_gnews:
+                errors.append(f"{source_name} ({url}): {first_err}")
+                continue
+            # ✅ 원본 RSS 실패 → site: 구글뉴스 폴백
+            try:
+                fb_url = _gnews_site_fallback_url(url, source_name)
+                feed = _get_feed(fb_url)
+                if not feed.entries:
+                    raise ValueError("fallback empty")
+                via_fallback = True
+                print(f"🔁 {source_name}: 원본 RSS 실패 → Google News site: 폴백으로 수집")
+            except Exception as fb_err:
+                errors.append(f"{source_name} ({url}): {first_err} | 폴백 실패: {fb_err}")
+                continue
 
-            headers = {
-                "User-Agent": (
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/126.0 Safari/537.36"
-                ),
-                "Accept": "application/rss+xml, application/xml, text/xml, */*",
-            }
+        parse_as_gnews = is_gnews or via_fallback
 
-            response = requests.get(
-                url,
-                headers=headers,
-                timeout=15
-            )
+        for entry in feed.entries[:20]:
+            raw_title = entry.get("title", "").strip()
+            link = entry.get("link", "").strip()
+            if not raw_title or not link:
+                continue
 
-            response.encoding = "utf-8"
+            gnews_link = ""
+            if parse_as_gnews:
+                title, display_source = extract_gnews(entry, raw_title, source_name)
+                gnews_link = link                  # 디코딩 전 원링크 보존(seen 이중키)
+                link = resolve_gnews_url(link)
+            else:
+                title = raw_title
+                display_source = source_name
 
-            feed = feedparser.parse(
-                response.content
-            )
-
-            # ✅ 파싱 실패(bozo+기사0) 시: 불법 XML 문자 제거 후 1회 재시도
-            #    (한경/PwC 등 'not well-formed / invalid token' 구제)
-            if feed.bozo and not feed.entries:
-                cleaned_text = response.content.decode("utf-8", errors="ignore")
-                cleaned_text = re.sub(
-                    r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", cleaned_text
-                )
-                feed = feedparser.parse(cleaned_text)
-
-            if feed.bozo and not feed.entries:
-                print(
-                    f"⚠️ RSS 파싱 실패(기사 0건) - {source_name}: "
-                    f"{feed.bozo_exception}"
-                )
-            elif feed.bozo:
-                print(
-                    f"⚠️ RSS 파싱 경고(일부 수집) - {source_name}: "
-                    f"{feed.bozo_exception}"
-                )
-
-
-            for entry in feed.entries[:20]:
-
-                raw_title = entry.get(
-                    "title",
-                    ""
-                ).strip()
-
-                link = entry.get(
-                    "link",
-                    ""
-                ).strip()
-
-
-                if not raw_title or not link:
+            published = entry.get("published_parsed") or entry.get("updated_parsed")
+            if published:
+                pub_date = datetime(*published[:6])
+                if pub_date < yesterday and source_name not in EVERGREEN_SOURCES:
                     continue
+                date_str = pub_date.strftime("%Y-%m-%d")
+            else:
+                date_str = "Unknown date"
 
-                # ✅ Google News: '제목 - 언론사' 분리해서 실제 언론사를 source 로.
-                #    일반 RSS: 제목 그대로, source 는 피드명.
-                gnews_link = ""
-                if is_gnews:
-                    title, display_source = extract_gnews(entry, raw_title, source_name)
-                    gnews_link = link               # ✅ 디코딩 전 원링크 보존(seen 이중키)
-                    link = resolve_gnews_url(link)
-                else:
-                    title = raw_title
-                    display_source = source_name
+            description = clean_html(entry.get("summary") or entry.get("description") or "")
 
-
-                published = (
-                    entry.get("published_parsed")
-                    or
-                    entry.get("updated_parsed")
-                )
-
-
-                if published:
-
-                    pub_date = datetime(
-                        *published[:6]
-                    )
-
-                    # 오래된 뉴스 제거
-                    # 단, 인사이트/리포트 계열은 허용
-                    evergreen_sources = [
-                        "McKinsey Insights",
-                        "BCG Insights",
-                        "PwC strategy+business",
-                        "SSIR",
-                        "PitchBook News",
-                        "Impact Alpha",
-                        "Climate Home News",
-                        "The Batch",
-                    ]
-
-                    if (
-                        pub_date < yesterday
-                        and source_name not in evergreen_sources
-                    ):
-                        continue
-
-
-                    date_str = pub_date.strftime(
-                        "%Y-%m-%d"
-                    )
-
-                else:
-                    date_str = "Unknown date"
-
-
-
-                description = clean_html(
-                    entry.get("summary")
-                    or
-                    entry.get("description")
-                    or ""
-                )
-
-
-                articles.append(
-                    {
-                        "title": title,
-                        "link": link,
-                        "date": date_str,
-                        "source": display_source,   # ✅ 실제 언론사(가능 시) / 아니면 피드명
-                        "feed": source_name,        # 라우팅/지역 판별용 원 피드명
-                        "region": source_region(source_name),
-                        "gnews_link": gnews_link,
-                        "description": description,
-                    }
-                )
-
-
-        except Exception as e:
-
-            errors.append(
-                f"{source_name} ({url}): {str(e)}"
-            )
-
+            articles.append({
+                "title": title,
+                "link": link,
+                "date": date_str,
+                "source": display_source,      # 표시용(실제 언론사)
+                "feed": source_name,           # 라우팅/메타데이터 매칭용 원 피드명
+                "region": source_region(source_name),
+                "gnews_link": gnews_link,
+                "description": description,
+            })
 
     return articles, errors
