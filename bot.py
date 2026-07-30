@@ -17,7 +17,9 @@ from processor.summarizer import summarize, keyword_hit
 from processor.reranker import rerank_by_category, is_enabled as llm_enabled
 try:
     from processor.translator import translate_titles
-except ImportError:
+except Exception as _e:      # ImportError 뿐 아니라 하위 import 실패도 포착
+    print(f"⚠️ 번역 모듈 로드 실패({_e}) — 번역 없이 진행합니다. "
+          f"(processor/translator.py 존재 여부 확인)")
     def translate_titles(arts):
         return arts
 from config import (
@@ -345,6 +347,8 @@ def main():
         print("LLM 리랭크 적용됨 (Gemini)")
 
     # ✅ 발송 확정 후보만 제목 한글 번역(실패 시 원문 유지, 발송은 계속됨)
+    print(f"🈯 번역 단계 진입: GEMINI_API_KEY={'있음' if os.environ.get('GEMINI_API_KEY') else '없음'}, "
+          f"후보 {len(classified)}건")
     classified = translate_titles(classified)
 
     if classified:
