@@ -4,6 +4,14 @@ import json
 import requests
 from config import MAX_PER_CATEGORY_DICT, MAX_PER_CATEGORY
 
+# LLM 장애 시 폴백 품질용: 투자자 관점의 '사건 발생' 시그널
+INVESTMENT_SIGNAL_KEYWORDS = [
+    "raise", "raised", "raises", "funding", "fund", "investment", "invest",
+    "acquisition", "acquire", "merger", "series", "seed", "ipo", "valuation",
+    "regulation", "policy", "launch", "deal", "stake", "buyout",
+    "투자유치", "투자", "인수", "합병", "펀딩", "상장", "출자", "규제", "정책",
+]
+
 def is_enabled():
     return bool(os.environ.get("GEMINI_API_KEY"))
 
@@ -54,6 +62,7 @@ def select_top_news_with_llm(articles: list, category_order: list) -> list:
         f"1. 각 분야별로 가장 중요한 기사만 선택해라. ({limit_instructions})\n"
         f"2. 투자자에게 새로운 정보가 있는 기사, 실제 투자·시장·정책 변화가 발생한 기사를 최우선으로 고른다.\n"
         f"3. 단순 의견, 인터뷰, 행사·세미나 홍보, 지자체 지원사업, 주가 전망 리딩 기사는 철저히 제외한다.\n"
+        f"3-1. 동일 기업(예: Nvidia, OpenAI)에 관한 기사는 한 분야당 최대 2개까지만 선택한다.\n"
         f"4. 설명이나 요약은 절대 쓰지 말고, 오직 선택한 기사의 ID 숫자들만 JSON 형식으로 반환해라.\n"
         f'응답 예시: {{"selected": ["1", "3", "8", "12"]}}'
     )
@@ -112,11 +121,12 @@ def _fallback_rule_based(buckets: dict, category_order: list) -> list:
         max_limit = MAX_PER_CATEGORY_DICT.get(cat, MAX_PER_CATEGORY)
 
         def fallback_sort_key(art):
+            text = (art.get("title", "") + " " + art.get("description", "")).lower()
+            # ✅ #2 반영: '단순 점수'가 아니라 투자자 관점 '사건 시그널'을 최우선
+            signal_score = sum(1 for kw in INVESTMENT_SIGNAL_KEYWORDS if kw in text)
             is_global = 1 if art.get("region", "global") == "global" else 0
             relevance_score = float(art.get("relevance", 0))
-            # Watchlist 기업명이 포함되어 가중치(2.5)를 받은 기사 우선
-            has_watchlist = 1 if relevance_score >= 2.5 else 0
-            return (is_global, relevance_score, has_watchlist)
+            return (signal_score, is_global, relevance_score)
 
         ranked = sorted(buckets[cat], key=fallback_sort_key, reverse=True)
         fallback_list.extend(ranked[:max_limit])
