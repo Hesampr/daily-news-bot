@@ -88,13 +88,13 @@ CATEGORIES = {
 }
 
 MAX_PER_CATEGORY_DICT = {
-    "🌱 임팩트": 4,
-    "🤖 AI": 4,
-    "💼 대체투자": 4,
-    "🌐 거시·정책·지정학": 4,
-    "👔 MBB·Big4 인사이트": 2,  # 핵심 인사이트는 엄선하여 2개만 발송
+    "🌱 임팩트": 5,
+    "🤖 AI": 5,
+    "💼 대체투자": 5,
+    "🌐 거시·정책·지정학": 5,
+    "👔 MBB·Big4 인사이트": 5,
 }
-MAX_PER_CATEGORY = 4
+MAX_PER_CATEGORY = 5
 
 OVERSEAS_PREFERRED_DOMAINS = ["🌱 임팩트", "🤖 AI", "💼 대체투자", "👔 MBB·Big4 인사이트"]
 REGION_WEIGHT = {"global": 1.35, "korea": 1.0}
