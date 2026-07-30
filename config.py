@@ -10,7 +10,7 @@ import os
 _DEAD_MODEL_PREFIXES = ("gemini-1.0", "gemini-1.5", "gemini-2.0")
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "").strip()
 if not GEMINI_MODEL or GEMINI_MODEL.startswith(_DEAD_MODEL_PREFIXES):
-    GEMINI_MODEL = "gemini-2.5-flash"
+    GEMINI_MODEL = "gemini-flash-latest"
 os.environ["GEMINI_MODEL"] = GEMINI_MODEL
 
 # ---------------------------------------------------------------------------
