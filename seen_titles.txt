@@ -79,3 +79,5 @@ OpenAI’s rogue AI agent didn’t stop at hacking Hugging Face
 Microsoft confirms Copilot ‘super app’ coming this year
 xAI’s last-minute scramble to stop Minnesota’s anti-nudification app law
 OpenAI president says it&#8217;s &#8216;building a family of devices&#8217; for its AI chatbots
+Elon Musk’s xAI is trying to sue its way out of a Grok reckoning
+Anthropic is finding bugs faster than Microsoft can fix them

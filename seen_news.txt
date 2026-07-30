@@ -16,6 +16,8 @@ http://www.impacton.net/news/articleView.html?idxno=19783
 http://www.impacton.net/news/articleView.html?idxno=19784
 http://www.impacton.net/news/articleView.html?idxno=19786
 http://www.impacton.net/news/articleView.html?idxno=19788
+https://arstechnica.com/security/2026/07/anthropic-is-finding-bugs-faster-than-microsoft-can-fix-them/
+https://arstechnica.com/tech-policy/2026/07/elon-musks-xai-is-trying-to-sue-its-way-out-of-a-grok-reckoning/
 https://cleantechnica.com/2026/07/27/ameren-missouri-bets-big-on-expensive-new-gas/
 https://cleantechnica.com/2026/07/29/as-jet-fuel-supplies-tighten-can-other-fuels-meet-demand/
 https://cleantechnica.com/2026/07/29/the-50-states-of-solar-report-q2-2026/
