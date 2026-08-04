@@ -6,12 +6,12 @@ from datetime import datetime, timedelta
 from urllib.parse import urlsplit, quote
 
 try:
-    from config import ALL_FEEDS as FEEDS
+    from ..config import ALL_FEEDS as FEEDS
 except ImportError:
-    from config import RSS_SOURCES as FEEDS
+    from ..config import RSS_SOURCES as FEEDS
 
 try:
-    from config import source_region
+    from ..config import source_region
 except ImportError:
     def source_region(_name):
         return "global"

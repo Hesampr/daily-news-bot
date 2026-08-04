@@ -1,5 +1,5 @@
 import re
-from config import (
+from ..config import (
     CATEGORIES,
     SOFT_PENALTY_KEYWORDS,
     WATCHLIST_WEIGHT,
