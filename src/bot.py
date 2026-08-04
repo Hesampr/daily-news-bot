@@ -3,14 +3,21 @@ import re
 import requests
 from datetime import datetime
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+import json
+from pathlib import Path
 
 from .fetchers import hackernews, rss_feeds
 try:
     from .fetchers import newsletters
     HAS_NEWSLETTERS = True
 except ImportError:
-    HAS_NEWSLETTERS = False
-    print("ℹ️ 뉴스레터 모듈을 찾을 수 없어 수집 단계에서 제외합니다.")
+    # Try Gmail newsletters as fallback
+    try:
+        from .fetchers import gmail_newsletters as newsletters
+        HAS_NEWSLETTERS = True
+    except ImportError:
+        HAS_NEWSLETTERS = False
+        print("ℹ️ 뉴스레터/Gmail 모듈을 찾을 수 없어 수집 단계에서 제외합니다.")
 
 from .processor.deduplicator import deduplicate_and_merge
 from .processor.summarizer import summarize, keyword_hit
@@ -277,6 +284,16 @@ def send_aggregated_slack_news(articles) -> bool:
     if trimmed:
         print(f"ℹ️ 길이 제한으로 {trimmed}건 생략(내일 재후보)")
 
+    # ✅ 메시지 아카이브: 발송 전 로컬 파일에 기록(append, JSONL)
+    try:
+        archive_path = Path(__file__).parent.parent.parent / "data" / "slack_archive.jsonl"
+        archive_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(archive_path, "a", encoding="utf-8") as af:
+            af.write(json.dumps({"ts": datetime.utcnow().isoformat(), "text": message_text}, ensure_ascii=False) + "\n")
+    except Exception as e:
+        # 아카이브 실패는 발송 실패로 간주하지 않음
+        print(f"⚠️ 슬랙 아카이브 저장 실패: {e}")
+
     # ✅ 링크 미리보기(unfurl) 끄기: 카드/썸네일이 딸려 나오지 않게 함
     resp = requests.post(
         slack_webhook_url,
@@ -319,8 +336,25 @@ def main():
     all_errors.extend(rss_errors)
     all_articles.extend(rss_articles)
 
+    # --- Prepare embedding model + store for cross-day semantic dedupe ---
+    try:
+        from .processor.deduplicator import _get_model as _get_emb_model
+        emb_model = _get_emb_model()
+        from .utils.embedding_store import find_similar, add_embeddings, meta_for_article
+        EMBEDDING_AVAILABLE = True
+    except Exception:
+        emb_model = None
+        find_similar = lambda *a, **k: False
+        add_embeddings = lambda *a, **k: None
+        meta_for_article = lambda a: {"ts": None}
+        EMBEDDING_AVAILABLE = False
+
     filtered = []
     accepted_titles = []      # ✅ 런 내부 중복(경북펀드 등 다매체) 차단용
+    # temporary container to keep embeddings for candidates to persist after send
+    candidate_embeddings = []
+    candidate_metas = []
+
     for art in all_articles:
         link = get_primary_link(art)
         normalized_link = normalize_url(link)
@@ -338,9 +372,30 @@ def main():
             continue
         if not is_relevant(art):
             continue
+
+        # Cross-day semantic dedupe using embedding store
+        text_for_embed = (title + " \n " + art.get("description", "")).strip()
+        is_duplicate_via_store = False
+        if EMBEDDING_AVAILABLE and text_for_embed:
+            try:
+                emb = emb_model.encode([text_for_embed], convert_to_numpy=True)[0]
+                if find_similar(emb, threshold=float(__import__('..config', fromlist=['SIMILARITY_THRESHOLD']).SIMILARITY_THRESHOLD)):
+                    is_duplicate_via_store = True
+                else:
+                    # keep embedding to persist later if article is sent
+                    art["_embedding"] = emb
+                    candidate_embeddings.append(emb)
+                    candidate_metas.append(meta_for_article(art))
+            except Exception as _e:
+                # model failure should not block pipeline
+                print(f"⚠️ 임베딩 검사 실패: {_e}")
+        if is_duplicate_via_store:
+            continue
+
         filtered.append(art)
         accepted_titles.append(title)
 
+    # persist candidate_embeddings? only persist after successful send to avoid noise
     merged, dedup_errors = deduplicate_and_merge(filtered)
     all_errors.extend(dedup_errors)
 
@@ -381,11 +436,76 @@ def main():
                 if gr:
                     seen_links.add(normalize_url(gr))
                 seen_titles.append(art.get("title_orig") or art.get("title", ""))
+
+            # persist embeddings only for actually sent articles
+            try:
+                from .utils.embedding_store import add_embeddings, meta_for_article
+                new_embs = []
+                new_meta = []
+                for art in sent_articles:
+                    emb = art.get("_embedding")
+                    if emb is not None:
+                        new_embs.append(emb)
+                        new_meta.append(meta_for_article(art))
+                if new_embs:
+                    add_embeddings(__import__('numpy').array(new_embs), new_meta)
+            except Exception as _e:
+                print(f"⚠️ 임베딩 저장 실패: {_e}")
+
+            # ✅ Send to Telegram (optional, if configured)
+            try:
+                from .utils import telegram_sender
+                if telegram_sender.is_configured():
+                    # Get the message that was sent to Slack (reconstruct from sent_articles)
+                    # Use the same formatting as Slack message
+                    from .config import MAX_PER_CATEGORY_DICT, MAX_PER_CATEGORY, SLACK_HEADER
+                    buckets = {cat: [] for cat in CATEGORY_ORDER}
+                    for a in sent_articles:
+                        cat = a.get("category", CATEGORY_ORDER[-1])
+                        if cat not in buckets:
+                            cat = CATEGORY_ORDER[-1]
+                        buckets[cat].append(a)
+                    
+                    parts = []
+                    if SLACK_HEADER:
+                        parts.append(SLACK_HEADER.replace("{date}", datetime.now().strftime("%y.%m.%d")))
+                        parts.append("")
+                    for cat in CATEGORY_ORDER:
+                        parts.append(f"*{cat}*")
+                        items = buckets.get(cat, [])
+                        if items:
+                            for a in items:
+                                title = a.get("title", "제목 없음").strip()
+                                url = get_primary_link(a) or "#"
+                                raw_source = get_primary_source(a) or "출처미상"
+                                source = clean_source_name(raw_source)
+                                date = fmt_date(a.get("date", ""))
+                                parts.append(f"• <{url}|{title}> ({source}, {date})")
+                        else:
+                            parts.append("• 오늘 조건에 맞는 뉴스가 없습니다.")
+                        parts.append("")
+                    message_text = "\n".join(parts).rstrip() + "\n"
+                    
+                    tg_success, tg_msg = telegram_sender.send_aggregated_news(message_text)
+                    if tg_success:
+                        print(f"✅ 텔레그램 전송 성공: {tg_msg}")
+                    else:
+                        print(f"⚠️ 텔레그램 전송 실패: {tg_msg}")
+            except Exception as _e:
+                print(f"⚠️ 텔레그램 전송 중 에러(계속 진행): {_e}")
     else:
         print("전송할 새로운 기사가 없습니다.")
 
     save_lines(SEEN_FILE, seen_links)
     save_lines(SEEN_TITLES_FILE, seen_titles, cap=2000)
+    # persist semantic text traces (recent N)
+    try:
+        from .utils.file_handler import SEEN_TEXTS_FILE
+        # cap at 2000 lines to avoid unbounded growth
+        from .utils.file_handler import save_lines
+        save_lines(SEEN_TEXTS_FILE, seen_texts, cap=2000)
+    except Exception as _e:
+        print(f"⚠️ seen_texts 저장 실패: {_e}")
 
     if all_errors:
         print(f"\n⚠️ 수집 오류 {len(all_errors)}건:")
