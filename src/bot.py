@@ -331,9 +331,68 @@ def main():
     all_errors.extend(rss_errors)
     all_articles.extend(rss_articles)
 
+    # --- Prepare embedding model + store for cross-day semantic dedupe ---
+    try:
+        from .processor.deduplicator import _get_model as _get_emb_model
+        emb_model = _get_emb_model()
+        from .utils.embedding_store import find_similar, add_embeddings, meta_for_article
+        EMBEDDING_AVAILABLE = True
+    except Exception:
+        emb_model = None
+        find_similar = lambda *a, **k: False
+        add_embeddings = lambda *a, **k: None
+        meta_for_article = lambda a: {"ts": None}
+        EMBEDDING_AVAILABLE = False
+
     filtered = []
     accepted_titles = []      # ✅ 런 내부 중복(경북펀드 등 다매체) 차단용
+    # temporary container to keep embeddings for candidates to persist after send
+    candidate_embeddings = []
+    candidate_metas = []
+
     for art in all_articles:
+        link = get_primary_link(art)
+        normalized_link = normalize_url(link)
+        title = art.get("title", "")
+        if not link or not title:
+            continue
+        gnews_raw = normalize_url(art.get("gnews_link") or "")
+        if normalized_link in seen_links or (gnews_raw and gnews_raw in seen_links):
+            continue
+        # 날짜 넘는 중복(어제까지 발송)
+        if any(is_same_news_issue(title, old) for old in seen_titles[-800:]):
+            continue
+        # ✅ 오늘 실행분 내 같은 이슈 중복 차단
+        if any(is_same_news_issue(title, t) for t in accepted_titles):
+            continue
+        if not is_relevant(art):
+            continue
+
+        # Cross-day semantic dedupe using embedding store
+        text_for_embed = (title + " \n " + art.get("description", "")).strip()
+        is_duplicate_via_store = False
+        if EMBEDDING_AVAILABLE and text_for_embed:
+            try:
+                emb = emb_model.encode([text_for_embed], convert_to_numpy=True)[0]
+                if find_similar(emb, threshold=float(__import__('..config', fromlist=['SIMILARITY_THRESHOLD']).SIMILARITY_THRESHOLD)):
+                    is_duplicate_via_store = True
+                else:
+                    # keep embedding to persist later if article is sent
+                    art["_embedding"] = emb
+                    candidate_embeddings.append(emb)
+                    candidate_metas.append(meta_for_article(art))
+            except Exception as _e:
+                # model failure should not block pipeline
+                print(f"⚠️ 임베딩 검사 실패: {_e}")
+        if is_duplicate_via_store:
+            continue
+
+        filtered.append(art)
+        accepted_titles.append(title)
+
+    # persist candidate_embeddings? only persist after successful send to avoid noise
+    merged, dedup_errors = deduplicate_and_merge(filtered)
+    all_errors.extend(dedup_errors)
         link = get_primary_link(art)
         normalized_link = normalize_url(link)
         title = art.get("title", "")
@@ -393,6 +452,21 @@ def main():
                 if gr:
                     seen_links.add(normalize_url(gr))
                 seen_titles.append(art.get("title_orig") or art.get("title", ""))
+
+            # persist embeddings only for actually sent articles
+            try:
+                from .utils.embedding_store import add_embeddings, meta_for_article
+                new_embs = []
+                new_meta = []
+                for art in sent_articles:
+                    emb = art.get("_embedding")
+                    if emb is not None:
+                        new_embs.append(emb)
+                        new_meta.append(meta_for_article(art))
+                if new_embs:
+                    add_embeddings(__import__('numpy').array(new_embs), new_meta)
+            except Exception as _e:
+                print(f"⚠️ 임베딩 저장 실패: {_e}")
     else:
         print("전송할 새로운 기사가 없습니다.")
 
