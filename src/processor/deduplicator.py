@@ -2,7 +2,7 @@ import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 from sentence_transformers import SentenceTransformer
 
-from config import SIMILARITY_THRESHOLD
+from ..config import SIMILARITY_THRESHOLD
 
 _model = None
 

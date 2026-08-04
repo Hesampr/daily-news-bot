@@ -3,7 +3,7 @@ import re
 import time
 import json
 import requests
-from config import MAX_PER_CATEGORY_DICT, MAX_PER_CATEGORY
+from ..config import MAX_PER_CATEGORY_DICT, MAX_PER_CATEGORY
 
 # LLM 장애 시 폴백 품질용: 투자자 관점의 '사건 발생' 시그널
 # ✅ (P1-5) 시그널 가중치: '사건'은 높게, 범용어(investment/fund)는 낮게

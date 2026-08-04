@@ -40,12 +40,12 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
           PYTHONUNBUFFERED: "1"
-        run: python -u bot.py
+        run: python -m src.bot
 
       - name: Commit seen files
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add seen_news.txt seen_titles.txt
+          git add data/seen_news.txt data/seen_titles.txt
           git diff --staged --quiet || git commit -m "Update seen files [skip ci]"
           git push

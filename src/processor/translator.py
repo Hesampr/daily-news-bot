@@ -9,11 +9,11 @@ import re
 import json
 
 try:
-    from config import TRANSLATE_TITLES
+    from ..config import TRANSLATE_TITLES
 except ImportError:
     TRANSLATE_TITLES = True
 
-from processor.reranker import _call_llm
+from .reranker import _call_llm
 
 _HANGUL = re.compile(r"[가-힣]")
 

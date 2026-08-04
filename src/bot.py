@@ -4,25 +4,25 @@ import requests
 from datetime import datetime
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from fetchers import hackernews, rss_feeds
+from .fetchers import hackernews, rss_feeds
 try:
-    from fetchers import newsletters
+    from .fetchers import newsletters
     HAS_NEWSLETTERS = True
 except ImportError:
     HAS_NEWSLETTERS = False
     print("ℹ️ 뉴스레터 모듈을 찾을 수 없어 수집 단계에서 제외합니다.")
 
-from processor.deduplicator import deduplicate_and_merge
-from processor.summarizer import summarize, keyword_hit
-from processor.reranker import rerank_by_category, is_enabled as llm_enabled
+from .processor.deduplicator import deduplicate_and_merge
+from .processor.summarizer import summarize, keyword_hit
+from .processor.reranker import rerank_by_category, is_enabled as llm_enabled
 try:
-    from processor.translator import translate_titles
+    from .processor.translator import translate_titles
 except Exception as _e:      # ImportError 뿐 아니라 하위 import 실패도 포착
     print(f"⚠️ 번역 모듈 로드 실패({_e}) — 번역 없이 진행합니다. "
           f"(processor/translator.py 존재 여부 확인)")
     def translate_titles(arts):
         return arts
-from config import (
+from .config import (
     INTEREST_KEYWORDS,
     BLACKLIST_KEYWORDS,
     HN_KEYWORDS,
@@ -33,49 +33,30 @@ from config import (
     REGION_WEIGHT,
 )
 try:
-    from config import LLM_SEND_MIN_SCORE
+    from .config import LLM_SEND_MIN_SCORE
 except ImportError:
     LLM_SEND_MIN_SCORE = 0
 try:
-    from config import NON_NEWS_KEYWORDS
+    from .config import NON_NEWS_KEYWORDS
 except ImportError:
     NON_NEWS_KEYWORDS = []
 # ✅ 운영 노브(P1-7): config 에서 조정 가능, 없으면 기본값
 try:
-    from config import SLACK_MAX_LENGTH
+    from .config import SLACK_MAX_LENGTH
 except ImportError:
     SLACK_MAX_LENGTH = 3900
 try:
-    from config import SLACK_HEADER          # 예: "📰 ISQ Daily News | {date}" / "" 이면 헤더 없음
+    from .config import SLACK_HEADER          # 예: "📰 ISQ Daily News | {date}" / "" 이면 헤더 없음
 except ImportError:
     SLACK_HEADER = ""
 try:
-    from config import MIN_CATEGORY_NEWS
+    from .config import MIN_CATEGORY_NEWS
 except ImportError:
     MIN_CATEGORY_NEWS = 3
 
-SEEN_FILE = "seen_news.txt"
-SEEN_TITLES_FILE = "seen_titles.txt"
+from .utils.file_handler import load_lines, save_lines, SEEN_FILE, SEEN_TITLES_FILE
 CATEGORY_ORDER = list(CATEGORIES.keys())
 TRACKING_QUERY_KEYS = {"fbclid", "gclid", "mc_cid", "mc_eid", "ref", "referrer"}
-
-
-def _load_lines(path) -> list:
-    if not os.path.exists(path):
-        return []
-    with open(path, "r", encoding="utf-8") as f:
-        return [ln.strip() for ln in f if ln.strip()]
-
-
-def _save_lines(path, items, cap=5000):
-    values = sorted(items) if isinstance(items, set) else list(items)
-    content = "\n".join(values[-cap:])
-    if os.path.exists(path):
-        with open(path, "r", encoding="utf-8") as f:
-            if f.read() == content:
-                return
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(content)
 
 
 def normalize_url(url: str) -> str:
@@ -313,8 +294,8 @@ def send_aggregated_slack_news(articles) -> bool:
 
 
 def main():
-    seen_links = {normalize_url(link) for link in _load_lines(SEEN_FILE)}
-    seen_titles = _load_lines(SEEN_TITLES_FILE)
+    seen_links = {normalize_url(link) for link in load_lines(SEEN_FILE)}
+    seen_titles = load_lines(SEEN_TITLES_FILE)
     all_errors, all_articles = [], []
 
     hn_articles, hn_errors = hackernews.fetch(HN_KEYWORDS)
@@ -403,8 +384,8 @@ def main():
     else:
         print("전송할 새로운 기사가 없습니다.")
 
-    _save_lines(SEEN_FILE, seen_links)
-    _save_lines(SEEN_TITLES_FILE, seen_titles, cap=2000)
+    save_lines(SEEN_FILE, seen_links)
+    save_lines(SEEN_TITLES_FILE, seen_titles, cap=2000)
 
     if all_errors:
         print(f"\n⚠️ 수집 오류 {len(all_errors)}건:")
