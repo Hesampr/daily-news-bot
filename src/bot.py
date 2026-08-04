@@ -393,27 +393,6 @@ def main():
     # persist candidate_embeddings? only persist after successful send to avoid noise
     merged, dedup_errors = deduplicate_and_merge(filtered)
     all_errors.extend(dedup_errors)
-        link = get_primary_link(art)
-        normalized_link = normalize_url(link)
-        title = art.get("title", "")
-        if not link or not title:
-            continue
-        gnews_raw = normalize_url(art.get("gnews_link") or "")
-        if normalized_link in seen_links or (gnews_raw and gnews_raw in seen_links):
-            continue
-        # 날짜 넘는 중복(어제까지 발송)
-        if any(is_same_news_issue(title, old) for old in seen_titles[-800:]):
-            continue
-        # ✅ 오늘 실행분 내 같은 이슈 중복 차단
-        if any(is_same_news_issue(title, t) for t in accepted_titles):
-            continue
-        if not is_relevant(art):
-            continue
-        filtered.append(art)
-        accepted_titles.append(title)
-
-    merged, dedup_errors = deduplicate_and_merge(filtered)
-    all_errors.extend(dedup_errors)
 
     classified = []
     for art in merged:
