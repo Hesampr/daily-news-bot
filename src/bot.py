@@ -11,8 +11,13 @@ try:
     from .fetchers import newsletters
     HAS_NEWSLETTERS = True
 except ImportError:
-    HAS_NEWSLETTERS = False
-    print("ℹ️ 뉴스레터 모듈을 찾을 수 없어 수집 단계에서 제외합니다.")
+    # Try Gmail newsletters as fallback
+    try:
+        from .fetchers import gmail_newsletters as newsletters
+        HAS_NEWSLETTERS = True
+    except ImportError:
+        HAS_NEWSLETTERS = False
+        print("ℹ️ 뉴스레터/Gmail 모듈을 찾을 수 없어 수집 단계에서 제외합니다.")
 
 from .processor.deduplicator import deduplicate_and_merge
 from .processor.summarizer import summarize, keyword_hit
