@@ -446,6 +446,48 @@ def main():
                     add_embeddings(__import__('numpy').array(new_embs), new_meta)
             except Exception as _e:
                 print(f"⚠️ 임베딩 저장 실패: {_e}")
+
+            # ✅ Send to Telegram (optional, if configured)
+            try:
+                from .utils import telegram_sender
+                if telegram_sender.is_configured():
+                    # Get the message that was sent to Slack (reconstruct from sent_articles)
+                    # Use the same formatting as Slack message
+                    from .config import MAX_PER_CATEGORY_DICT, MAX_PER_CATEGORY, SLACK_HEADER
+                    buckets = {cat: [] for cat in CATEGORY_ORDER}
+                    for a in sent_articles:
+                        cat = a.get("category", CATEGORY_ORDER[-1])
+                        if cat not in buckets:
+                            cat = CATEGORY_ORDER[-1]
+                        buckets[cat].append(a)
+                    
+                    parts = []
+                    if SLACK_HEADER:
+                        parts.append(SLACK_HEADER.replace("{date}", datetime.now().strftime("%y.%m.%d")))
+                        parts.append("")
+                    for cat in CATEGORY_ORDER:
+                        parts.append(f"*{cat}*")
+                        items = buckets.get(cat, [])
+                        if items:
+                            for a in items:
+                                title = a.get("title", "제목 없음").strip()
+                                url = get_primary_link(a) or "#"
+                                raw_source = get_primary_source(a) or "출처미상"
+                                source = clean_source_name(raw_source)
+                                date = fmt_date(a.get("date", ""))
+                                parts.append(f"• <{url}|{title}> ({source}, {date})")
+                        else:
+                            parts.append("• 오늘 조건에 맞는 뉴스가 없습니다.")
+                        parts.append("")
+                    message_text = "\n".join(parts).rstrip() + "\n"
+                    
+                    tg_success, tg_msg = telegram_sender.send_aggregated_news(message_text)
+                    if tg_success:
+                        print(f"✅ 텔레그램 전송 성공: {tg_msg}")
+                    else:
+                        print(f"⚠️ 텔레그램 전송 실패: {tg_msg}")
+            except Exception as _e:
+                print(f"⚠️ 텔레그램 전송 중 에러(계속 진행): {_e}")
     else:
         print("전송할 새로운 기사가 없습니다.")
 
