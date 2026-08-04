@@ -101,8 +101,43 @@ def _get_feed(url: str):
     return feed
 
 
-def _gnews_site_fallback_url(original_url: str, source_name: str) -> str:
-    """✅ 3단계 안전망: 원본 RSS 사망 시 해당 '도메인 한정' 구글뉴스 검색으로 우회.
+def _discover_feed_url(original_url: str) -> str:
+    """Try heuristics to find a working feed URL for a site.
+    Return working URL or None."""
+    try:
+        resp = requests.get(original_url, headers=_HEADERS, timeout=10)
+    except Exception:
+        resp = None
+    # If got content and it already looks like RSS/Atom
+    if resp is not None:
+        ctype = resp.headers.get("content-type", "") if resp.headers else ""
+        text_head = resp.text[:2000] if resp is not None else ""
+        if "xml" in ctype.lower() or re.search(r"<\?xml|<rss|<feed", text_head, re.I):
+            return original_url
+        # try to find <link rel="alternate" type="application/rss+xml"
+        m = re.search(r'<link[^>]+type=["\']application/(rss|atom)\+xml["\'][^>]+href=["\']([^"\']+)["\']', resp.text, re.I)
+        if m:
+            href = m.group(2)
+            # absolute?
+            if href.startswith("http"):
+                return href
+            from urllib.parse import urljoin
+            return urljoin(original_url, href)
+
+    # try common suffixes
+    suffixes = ["/feed", "/feed/", "/rss", "/rss.xml", "/atom.xml", "/feeds/posts/default?alt=rss"]
+    for s in suffixes:
+        candidate = original_url.rstrip("/") + s if not original_url.endswith(s) else original_url
+        try:
+            r = requests.get(candidate, headers=_HEADERS, timeout=10)
+            if r.status_code == 200 and ("xml" in r.headers.get("content-type","") or re.search(r"<rss|<feed", r.text, re.I)):
+                return candidate
+        except Exception:
+            pass
+    return None
+
+
+def _gnews_site_fallback_url(original_url: str, source_name: str) -> str:    """✅ 3단계 안전망: 원본 RSS 사망 시 해당 '도메인 한정' 구글뉴스 검색으로 우회.
     (매체명 검색은 '그 매체에 관한 기사'가 섞이므로 site: 을 사용)"""
     domain = urlsplit(original_url).netloc.replace("www.", "")
     if source_region(source_name) == "korea":
@@ -131,17 +166,26 @@ def fetch() -> tuple:
             if is_gnews:
                 errors.append(f"{source_name} ({url}): {first_err}")
                 continue
-            # ✅ 원본 RSS 실패 → site: 구글뉴스 폴백
-            try:
-                fb_url = _gnews_site_fallback_url(url, source_name)
-                feed = _get_feed(fb_url)
-                if not feed.entries:
-                    raise ValueError("fallback empty")
-                via_fallback = True
-                print(f"🔁 {source_name}: 원본 RSS 실패 → Google News site: 폴백으로 수집")
-            except Exception as fb_err:
-                errors.append(f"{source_name} ({url}): {first_err} | 폴백 실패: {fb_err}")
-                continue
+            # Try to discover an alternate feed URL heuristically
+            discovered = _discover_feed_url(url)
+            if discovered:
+                try:
+                    feed = _get_feed(discovered)
+                    print(f"🔍 {source_name}: 발견된 대체 피드로 수집({discovered})")
+                except Exception as d_err:
+                    discovered = None
+            if not discovered:
+                # ✅ 원본 RSS 실패 → site: 구글뉴스 폴백
+                try:
+                    fb_url = _gnews_site_fallback_url(url, source_name)
+                    feed = _get_feed(fb_url)
+                    if not feed.entries:
+                        raise ValueError("fallback empty")
+                    via_fallback = True
+                    print(f"🔁 {source_name}: 원본 RSS 실패 → Google News site: 폴백으로 수집")
+                except Exception as fb_err:
+                    errors.append(f"{source_name} ({url}): {first_err} | 폴백 실패: {fb_err}")
+                    continue
 
         parse_as_gnews = is_gnews or via_fallback
 
