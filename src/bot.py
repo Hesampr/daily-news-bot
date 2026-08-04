@@ -398,6 +398,14 @@ def main():
 
     save_lines(SEEN_FILE, seen_links)
     save_lines(SEEN_TITLES_FILE, seen_titles, cap=2000)
+    # persist semantic text traces (recent N)
+    try:
+        from .utils.file_handler import SEEN_TEXTS_FILE
+        # cap at 2000 lines to avoid unbounded growth
+        from .utils.file_handler import save_lines
+        save_lines(SEEN_TEXTS_FILE, seen_texts, cap=2000)
+    except Exception as _e:
+        print(f"⚠️ seen_texts 저장 실패: {_e}")
 
     if all_errors:
         print(f"\n⚠️ 수집 오류 {len(all_errors)}건:")
