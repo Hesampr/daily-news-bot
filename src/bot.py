@@ -3,6 +3,8 @@ import re
 import requests
 from datetime import datetime
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+import json
+from pathlib import Path
 
 from .fetchers import hackernews, rss_feeds
 try:
@@ -276,6 +278,16 @@ def send_aggregated_slack_news(articles) -> bool:
         message_text = _build()
     if trimmed:
         print(f"ℹ️ 길이 제한으로 {trimmed}건 생략(내일 재후보)")
+
+    # ✅ 메시지 아카이브: 발송 전 로컬 파일에 기록(append, JSONL)
+    try:
+        archive_path = Path(__file__).parent.parent.parent / "data" / "slack_archive.jsonl"
+        archive_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(archive_path, "a", encoding="utf-8") as af:
+            af.write(json.dumps({"ts": datetime.utcnow().isoformat(), "text": message_text}, ensure_ascii=False) + "\n")
+    except Exception as e:
+        # 아카이브 실패는 발송 실패로 간주하지 않음
+        print(f"⚠️ 슬랙 아카이브 저장 실패: {e}")
 
     # ✅ 링크 미리보기(unfurl) 끄기: 카드/썸네일이 딸려 나오지 않게 함
     resp = requests.post(

@@ -178,7 +178,7 @@ RSS_SOURCE_METADATA = {
     "Sifted": {"url": "https://sifted.eu/feed", "category": "💼 대체투자", "tier": "supplemental", "priority": 4},
     "VentureSquare (벤처스퀘어)": {"url": "https://www.venturesquare.net/feed", "category": "💼 대체투자", "tier": "supplemental", "priority": 3},
     "Platum (플랫텀)": {"url": "https://platum.kr/feed", "category": "💼 대체투자", "tier": "supplemental", "priority": 3},
-    "한경 Geeks (벤처/VC)": {"url": "https://rss.hankyung.com/feed/geeks.xml", "category": "💼 대체투자", "tier": "supplemental", "priority": 3},
+    "한경 Geeks (벤처/VC)": {"url": "https://rss.hankyung.com/feed/geeks.xml", "category": "🌐 거시·정책·지정학", "tier": "supplemental", "priority": 3},
 
     # 🌐 거시경제·정책·지정학
     "The Economist": {"url": "https://www.economist.com/finance-and-economics/rss.xml", "category": "🌐 거시·정책·지정학", "tier": "primary", "priority": 5},
@@ -187,6 +187,12 @@ RSS_SOURCE_METADATA = {
     # 👔 MBB·Big4 인사이트
     "McKinsey Insights": {"url": "https://www.mckinsey.com/insights/rss", "category": "👔 MBB·Big4 인사이트", "tier": "primary", "priority": 5},
     "PwC strategy+business": {"url": "https://www.strategy-business.com/rss", "category": "👔 MBB·Big4 인사이트", "tier": "primary", "priority": 5},
+    # 추가: 다른 MBB/Big4의 공식 인사이트 또는 블로그 피드(없는 경우 블로그로 대체)
+    "Bain Insights": {"url": "https://www.bain.com/insights/feed/", "category": "👔 MBB·Big4 인사이트", "tier": "supplemental", "priority": 3},
+    "BCG Insights (blog)": {"url": "https://www.bcg.com/publications", "category": "👔 MBB·Big4 인사이트", "tier": "supplemental", "priority": 3},
+    "Deloitte Insights (blog)": {"url": "https://www2.deloitte.com/global/en/insights.html", "category": "👔 MBB·Big4 인사이트", "tier": "supplemental", "priority": 3},
+    "EY Insights (blog)": {"url": "https://www.ey.com/en_gl/insights/rss", "category": "👔 MBB·Big4 인사이트", "tier": "supplemental", "priority": 3},
+    "KPMG Insights (blog)": {"url": "https://home.kpmg/xx/en/home/insights.html", "category": "👔 MBB·Big4 인사이트", "tier": "supplemental", "priority": 3},
 }
 
 # ---------------------------------------------------------------------------
@@ -206,7 +212,8 @@ GOOGLE_NEWS_FEEDS = {
     "글로벌 VC/PE": "https://news.google.com/rss/search?q=(venture+capital+OR+private+equity+OR+funding+round+OR+dry+powder+OR+startup+raising)+when:3d&hl=en-US&gl=US&ceid=US:en",
     "미국 통화정책/금리": "https://news.google.com/rss/search?q=(FOMC+OR+%EC%97%B0%EC%A4%80+OR+%EA%B8%B0%EC%A4%80%EA%B8%88%EB%A6%AC+OR+%ED%8C%8C%EC%9B%94+OR+inflation+OR+treasury+yield)+when:3d&hl=ko&gl=KR&ceid=KR:ko",
     "글로벌 거시/지정학": "https://news.google.com/rss/search?q=(interest+rate+OR+recession+OR+tariff+OR+geopolitics+OR+federal+reserve)+when:3d&hl=en-US&gl=US&ceid=US:en",
-    "MBB/Big4 인사이트": "https://news.google.com/rss/search?q=(McKinsey+OR+BCG+OR+Bain+OR+Deloitte)+(AI+OR+climate+OR+venture+OR+private+equity)+when:3d&hl=en-US&gl=US&ceid=US:en"
+    "MBB/Big4 인사이트": "https://news.google.com/rss/search?q=(McKinsey+OR+BCG+OR+Bain+OR+Deloitte)+(AI+OR+climate+OR+venture+OR+private+equity)+when:3d&hl=en-US&gl=US&ceid=US:en",
+    "임팩트 종합": "https://news.google.com/rss/search?q=(impact+investing+OR+climate+tech+OR+climate+OR+%22Bloomberg+Green%22+OR+site:impacton.net+OR+site:bloomberg.com)+when:3d&hl=ko&gl=KR&ceid=KR:ko"
 }
 
 # ---------------------------------------------------------------------------
@@ -221,6 +228,7 @@ FEED_CATEGORY_OVERRIDE = {
     "미국 통화정책/금리": "🌐 거시·정책·지정학",
     "글로벌 거시/지정학": "🌐 거시·정책·지정학",
     "MBB/Big4 인사이트": "👔 MBB·Big4 인사이트",
+    "임팩트 종합": "🌱 임팩트",
 }
 
 # ---------------------------------------------------------------------------
